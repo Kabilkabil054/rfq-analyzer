@@ -1,88 +1,78 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// RFQ ANALYZER PRO — Full-Stack SaaS
-// Industrial Precision aesthetic · AI PDF+Drawing extraction · Professional PDF
-// ─────────────────────────────────────────────────────────────────────────────
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
-// ── External fonts & libraries ──────────────────────────────────────────────
-(function loadDeps() {
-  const font = document.createElement("link");
-  font.rel = "stylesheet";
-  font.href =
-    "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap";
-  document.head.appendChild(font);
-
-  const pdf = document.createElement("script");
-  pdf.src =
-    "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
-  document.head.appendChild(pdf);
+/* --- inject globals once --- */
+(() => {
+  if (document.getElementById("rfqa-boot")) return;
+  const m = document.createElement("meta");
+  m.id = "rfqa-boot";
+  m.name = "viewport";
+  m.content = "width=device-width,initial-scale=1";
+  document.head.appendChild(m);
+  const f = document.createElement("link");
+  f.rel = "stylesheet";
+  f.href =
+    "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap";
+  document.head.appendChild(f);
+  const s = document.createElement("style");
+  s.textContent = `
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'DM Sans',system-ui,sans-serif;background:#07090f}
+    ::-webkit-scrollbar{width:4px;height:4px}
+    ::-webkit-scrollbar-track{background:#07090f}
+    ::-webkit-scrollbar-thumb{background:#1e3050;border-radius:4px}
+    input[type=number]::-webkit-inner-spin-button{opacity:1}
+    .ri:focus{outline:none!important;border-color:#4f8fff!important;box-shadow:0 0 0 3px rgba(79,143,255,.15)!important}
+    .rb{transition:filter .15s,transform .12s;cursor:pointer}
+    .rb:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px)}
+    .rb:active:not(:disabled){transform:translateY(0)}
+    .rb:disabled{opacity:.4;cursor:not-allowed!important}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+    .fade{animation:fadeUp .22s ease}
+    .spin{animation:spin .9s linear infinite}
+  `;
+  document.head.appendChild(s);
 })();
 
-// ════════════════════════════════════════════════════════════════════════════
-// MASTER DATA
-// ════════════════════════════════════════════════════════════════════════════
-const MATERIALS = [
-  { name: "Mild Steel", density: 7850, ppkg: 80, color: "#64748b" },
-  { name: "Stainless Steel 304", density: 8000, ppkg: 180, color: "#94a3b8" },
-  { name: "Aluminium 6061", density: 2700, ppkg: 250, color: "#60a5fa" },
-  { name: "Carbon Steel", density: 7850, ppkg: 90, color: "#78716c" },
-  { name: "Galvanized Steel", density: 7850, ppkg: 95, color: "#6b7280" },
-  { name: "Brass", density: 8500, ppkg: 300, color: "#d97706" },
-  { name: "Copper", density: 8960, ppkg: 450, color: "#b45309" },
-  { name: "Tool Steel", density: 7750, ppkg: 350, color: "#475569" },
-  { name: "Titanium", density: 4500, ppkg: 1200, color: "#7c3aed" },
-  { name: "Cast Iron", density: 7200, ppkg: 65, color: "#374151" },
+function useBP() {
+  const [w, setW] = useState(window.innerWidth);
+  useEffect(() => {
+    const fn = () => setW(window.innerWidth);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return { sm: w < 700, lg: w >= 1080 };
+}
+
+/* -- DATA -- */
+const MATS = [
+  { name: "Mild Steel", density: 7850, ppkg: 80 },
+  { name: "Stainless Steel 304", density: 8000, ppkg: 180 },
+  { name: "Aluminium 6061", density: 2700, ppkg: 250 },
+  { name: "Carbon Steel", density: 7850, ppkg: 90 },
+  { name: "Galvanized Steel", density: 7850, ppkg: 95 },
+  { name: "Brass", density: 8500, ppkg: 300 },
+  { name: "Copper", density: 8960, ppkg: 450 },
+  { name: "Tool Steel", density: 7750, ppkg: 350 },
+  { name: "Titanium", density: 4500, ppkg: 1200 },
+  { name: "Cast Iron", density: 7200, ppkg: 65 },
 ];
 
-const PROCESSES = [
-  {
-    name: "Laser Cutting",
-    rate: 600,
-    setup: 500,
-    min_t: 0.5,
-    max_t: 25,
-    icon: "🔴",
-  },
-  {
-    name: "CNC Machining",
-    rate: 900,
-    setup: 1000,
-    min_t: 1,
-    max_t: 200,
-    icon: "⚙️",
-  },
-  { name: "Bending", rate: 400, setup: 300, min_t: 0.5, max_t: 20, icon: "🔧" },
-  { name: "Welding", rate: 500, setup: 400, min_t: 1, max_t: 50, icon: "🔥" },
-  {
-    name: "Grinding",
-    rate: 300,
-    setup: 200,
-    min_t: 0.5,
-    max_t: 100,
-    icon: "⚡",
-  },
-  {
-    name: "Plasma Cutting",
-    rate: 350,
-    setup: 400,
-    min_t: 1,
-    max_t: 60,
-    icon: "🌡️",
-  },
-  {
-    name: "Waterjet Cutting",
-    rate: 700,
-    setup: 600,
-    min_t: 0.5,
-    max_t: 200,
-    icon: "💧",
-  },
-  { name: "EDM", rate: 1200, setup: 1500, min_t: 0.1, max_t: 300, icon: "⚡" },
-  { name: "Turning", rate: 600, setup: 800, min_t: 5, max_t: 500, icon: "🔩" },
-  { name: "Milling", rate: 750, setup: 900, min_t: 1, max_t: 300, icon: "🏭" },
+const PROCS = [
+  { name: "Laser Cutting", rate: 600, setup: 500, min_t: 0.5, max_t: 25 },
+  { name: "CNC Machining", rate: 900, setup: 1000, min_t: 1, max_t: 200 },
+  { name: "Bending", rate: 400, setup: 300, min_t: 0.5, max_t: 20 },
+  { name: "Welding", rate: 500, setup: 400, min_t: 1, max_t: 50 },
+  { name: "Grinding", rate: 300, setup: 200, min_t: 0.5, max_t: 100 },
+  { name: "Plasma Cutting", rate: 350, setup: 400, min_t: 1, max_t: 60 },
+  { name: "Waterjet Cutting", rate: 700, setup: 600, min_t: 0.5, max_t: 200 },
+  { name: "EDM", rate: 1200, setup: 1500, min_t: 0.1, max_t: 300 },
+  { name: "Turning", rate: 600, setup: 800, min_t: 5, max_t: 500 },
+  { name: "Milling", rate: 750, setup: 900, min_t: 1, max_t: 300 },
 ];
 
-const COMPANIES = [
+const INIT_COS = [
   {
     name: "DFAB Industries",
     laser: 600,
@@ -95,9 +85,6 @@ const COMPANIES = [
     packaging: 40,
     transport: 100,
     margin: 0.2,
-    addr: "Chennai, Tamil Nadu",
-    gst: "33AABCD1234E1Z5",
-    phone: "+91 44 2345 6789",
   },
   {
     name: "AlphaFabrication",
@@ -111,9 +98,6 @@ const COMPANIES = [
     packaging: 35,
     transport: 90,
     margin: 0.18,
-    addr: "Mumbai, Maharashtra",
-    gst: "27AABCD5678F1Z2",
-    phone: "+91 22 3456 7890",
   },
   {
     name: "PrecisionWorks",
@@ -127,9 +111,6 @@ const COMPANIES = [
     packaging: 50,
     transport: 120,
     margin: 0.25,
-    addr: "Pune, Maharashtra",
-    gst: "27AABCE9012G1Z8",
-    phone: "+91 20 4567 8901",
   },
   {
     name: "GlobalMetal",
@@ -143,12 +124,9 @@ const COMPANIES = [
     packaging: 30,
     transport: 80,
     margin: 0.15,
-    addr: "Coimbatore, TN",
-    gst: "33AABCF3456H1Z3",
-    phone: "+91 422 567 8901",
   },
   {
-    name: "MetalCraft Solutions",
+    name: "MetalCraft",
     laser: 620,
     cnc: 950,
     bending: 420,
@@ -159,9 +137,6 @@ const COMPANIES = [
     packaging: 45,
     transport: 110,
     margin: 0.22,
-    addr: "Bangalore, Karnataka",
-    gst: "29AABCG7890I1Z7",
-    phone: "+91 80 5678 9012",
   },
   {
     name: "Custom Company",
@@ -175,1630 +150,1823 @@ const COMPANIES = [
     packaging: 40,
     transport: 100,
     margin: 0.2,
-    addr: "",
-    gst: "",
-    phone: "",
   },
 ];
 
-const CURRENCIES = [
-  { code: "INR", sym: "₹", rate: 1, flag: "🇮🇳" },
-  { code: "USD", sym: "$", rate: 83.5, flag: "🇺🇸" },
-  { code: "EUR", sym: "€", rate: 91.2, flag: "🇪🇺" },
-  { code: "GBP", sym: "£", rate: 106.3, flag: "🇬🇧" },
-  { code: "AED", sym: "د.إ", rate: 22.7, flag: "🇦🇪" },
+const INIT_CCY = [
+  { code: "INR", sym: "Rs", name: "Indian Rupee", rate: 1 },
+  { code: "USD", sym: "$", name: "US Dollar", rate: 83.5 },
+  { code: "EUR", sym: "E", name: "Euro", rate: 91.2 },
+  { code: "GBP", sym: "L", name: "British Pound", rate: 106.3 },
+  { code: "AED", sym: "AED", name: "UAE Dirham", rate: 22.7 },
+  { code: "SGD", sym: "S$", name: "Singapore Dollar", rate: 62.1 },
+  { code: "JPY", sym: "Y", name: "Japanese Yen", rate: 0.56 },
+  { code: "CNY", sym: "CN", name: "Chinese Yuan", rate: 11.5 },
+  { code: "SAR", sym: "SR", name: "Saudi Riyal", rate: 22.3 },
+  { code: "MYR", sym: "RM", name: "Malaysian Ringgit", rate: 18.4 },
 ];
 
-const FINISH_OPTIONS = [
-  "Raw / No Finish",
-  "Powder Coat (Standard)",
-  "Powder Coat (RAL Custom)",
-  "Anodizing (Clear)",
-  "Anodizing (Black)",
-  "Hard Anodizing",
-  "Hot-Dip Galvanizing",
-  "Electroplating (Zinc)",
-  "Chrome Plating",
-  "Mirror Polish",
-  "Brushed / Satin Finish",
-  "Sandblast + Primer",
-  "Passivation",
-  "Nickel Plating",
-  "Phosphating",
-  "Custom Finish",
-];
-
-const DEFAULT_EXTRAS = [
-  {
-    id: "gst",
-    label: "GST 18%",
-    type: "percent",
-    value: "18",
-    enabled: true,
-    locked: true,
-  },
-  {
-    id: "insp",
-    label: "Quality Inspection",
-    type: "fixed",
-    value: "500",
-    enabled: false,
-    locked: false,
-  },
-  {
-    id: "exp",
-    label: "Expedite Surcharge",
-    type: "percent",
-    value: "15",
-    enabled: false,
-    locked: false,
-  },
-  {
-    id: "tool",
-    label: "Special Tooling",
-    type: "fixed",
-    value: "0",
-    enabled: false,
-    locked: false,
-  },
-  {
-    id: "pkg",
-    label: "Premium Packaging",
-    type: "fixed",
-    value: "0",
-    enabled: false,
-    locked: false,
-  },
-  {
-    id: "custom1",
-    label: "",
-    type: "fixed",
-    value: "0",
-    enabled: false,
-    locked: false,
-  },
-  {
-    id: "custom2",
-    label: "",
-    type: "fixed",
-    value: "0",
-    enabled: false,
-    locked: false,
-  },
-];
-
-// ════════════════════════════════════════════════════════════════════════════
-// CALCULATION ENGINES
-// ════════════════════════════════════════════════════════════════════════════
-function calcCosts(part, co, ccyCode) {
-  const mat = MATERIALS.find((m) => m.name === part.material) || MATERIALS[0];
-  const proc = PROCESSES.find((p) => p.name === part.process) || PROCESSES[0];
-  const ccy = CURRENCIES.find((c) => c.code === ccyCode) || CURRENCIES[0];
-  const L = +part.length || 200;
-  const W = +part.width || 100;
-  const T = +part.thickness || 5;
-  const Q = +part.quantity || 1;
-
-  const wt = (L / 1000) * (W / 1000) * (T / 1000) * mat.density;
+/* -- COST ENGINE -- */
+function calcCosts(p, co, ccyCode, extras, ccyList) {
+  const mat = MATS.find((m) => m.name === p.material) || MATS[0];
+  const proc = PROCS.find((x) => x.name === p.process) || PROCS[0];
+  const ccy =
+    (ccyList || INIT_CCY).find((c) => c.code === ccyCode) || INIT_CCY[0];
+  const L = +p.length || 200,
+    W = +p.width || 100,
+    T = +p.thickness || 5,
+    Q = +p.quantity || 1;
+  const vol = (L / 1000) * (W / 1000) * (T / 1000);
+  const wt = vol * mat.density;
   const matINR = wt * mat.ppkg;
-
   const rateMap = {
     "laser cutting": co.laser,
+    "plasma cutting": co.laser * 0.58,
+    "waterjet cutting": co.laser * 1.18,
     "cnc machining": co.cnc,
-    bending: co.bending,
-    welding: co.welding,
-    grinding: co.grinding,
-    "plasma cutting": co.laser * 0.6,
-    "waterjet cutting": co.laser * 1.2,
     edm: co.cnc * 1.3,
     turning: co.cnc * 0.7,
     milling: co.cnc * 0.85,
+    bending: co.bending,
+    welding: co.welding,
+    grinding: co.grinding,
   };
-  const mrate = rateMap[proc.name.toLowerCase()] || co.laser;
+  const mr = rateMap[proc.name.toLowerCase()] || co.laser;
   const mhrs = Math.max(0.25, (L / 1000) * (W / 1000) * 2.5 + T * 0.02);
-
-  const machINR = mhrs * mrate;
+  const machINR = mhrs * mr;
   const labINR = mhrs * 0.8 * co.labor;
   const setupINR = proc.setup / Math.max(Q, 1);
-  const finINR = co.finishing;
-  const pkgINR = co.packaging / Math.max(Q, 1);
-  const trINR = co.transport / Math.max(Q, 1);
-
-  const unitSub =
-    matINR + machINR + labINR + setupINR + finINR + pkgINR + trINR;
-  const unitProfit = unitSub * co.margin;
-  const unitTot = unitSub + unitProfit;
-  const totalINR = unitTot * Q;
-
+  const finINR = co.finishing * Q;
+  const pkgINR = co.packaging;
+  const trINR = co.transport;
+  const exINR = (extras || []).reduce((s, e) => s + (+e.amount || 0), 0);
+  const sub =
+    (matINR + machINR + labINR + setupINR + co.finishing) * Q +
+    pkgINR +
+    trINR +
+    exINR;
+  const profINR = sub * co.margin;
+  const totINR = sub + profINR;
   const cv = (v) => v / ccy.rate;
   return {
     material: cv(matINR),
     machine: cv(machINR),
     labor: cv(labINR),
-    setup: cv(setupINR),
+    setup: cv(setupINR * Q),
     finishing: cv(finINR),
     packaging: cv(pkgINR),
     transport: cv(trINR),
-    profit: cv(unitProfit),
-    per_part: cv(unitTot),
-    subtotal: cv(unitSub * Q),
-    total: cv(totalINR),
+    extra: cv(exINR),
+    profit: cv(profINR),
+    total: cv(totINR),
+    per_part: cv(totINR / Q),
     weight: wt,
     mhrs,
+    ccy,
     mat,
     proc,
-    ccy,
   };
 }
 
-function calcExtrasTotal(extras, subtotalBeforeExtras, ccy) {
-  const curr = CURRENCIES.find((c) => c.code === ccy) || CURRENCIES[0];
-  let total = 0;
-  const rows = extras
-    .filter((e) => e.enabled && e.label && +e.value > 0)
-    .map((e) => {
-      let amt = 0;
-      if (e.type === "percent") {
-        amt = (subtotalBeforeExtras * +e.value) / 100;
-      } else {
-        amt = +e.value / curr.rate;
-      }
-      total += amt;
-      return { ...e, computed: amt };
-    });
-  return { rows, total };
+function applyOv(base, ov, qty) {
+  if (!ov || !Object.keys(ov).length) return base;
+  const m = { ...base };
+  for (const k of [
+    "material",
+    "machine",
+    "labor",
+    "setup",
+    "finishing",
+    "packaging",
+    "transport",
+    "extra",
+    "profit",
+  ])
+    if (ov[k] !== undefined) m[k] = ov[k];
+  m.total =
+    m.material +
+    m.machine +
+    m.labor +
+    m.setup +
+    m.finishing +
+    m.packaging +
+    m.transport +
+    m.extra +
+    m.profit;
+  m.per_part = m.total / Math.max(1, +qty || 1);
+  return m;
 }
 
-function calcFeasibility(part) {
-  const proc = PROCESSES.find((p) => p.name === part.process);
-  const T = +part.thickness,
-    Q = +part.quantity;
-  const L = +part.length,
-    W = +part.width;
-  const warns = [];
+function calcFeas(p) {
+  const proc = PROCS.find((x) => x.name === p.process);
+  const T = +p.thickness,
+    L = +p.length,
+    W = +p.width,
+    Q = +p.quantity;
+  const w = [];
   if (proc) {
     if (T > proc.max_t)
-      warns.push({
+      w.push({
         lvl: "error",
-        msg: `Thickness ${T}mm exceeds ${proc.name} max (${proc.max_t}mm). Switch to Plasma/Waterjet.`,
+        msg: `Thickness ${T}mm exceeds max for ${proc.name} (${proc.max_t}mm).`,
       });
     if (T < proc.min_t)
-      warns.push({
+      w.push({
         lvl: "error",
-        msg: `Thickness ${T}mm below ${proc.name} min (${proc.min_t}mm). Warping risk.`,
+        msg: `Thickness ${T}mm below min for ${proc.name} (${proc.min_t}mm).`,
       });
   }
-  if ((part.material || "").toLowerCase().includes("titanium"))
-    warns.push({
+  if ((p.material || "").toLowerCase().includes("titanium"))
+    w.push({
       lvl: "warn",
-      msg: "Titanium requires specialised tooling — extend lead time budget.",
+      msg: "Titanium requires specialised tooling - longer lead time expected.",
     });
   if (L > 3000 || W > 1500)
-    warns.push({
+    w.push({
       lvl: "warn",
-      msg: `Oversized part (${L}×${W}mm) — verify machine bed capacity.`,
+      msg: `Part ${L}x${W}mm may exceed standard machine bed. Verify capacity.`,
     });
   if (Q < 5)
-    warns.push({
+    w.push({
       lvl: "info",
-      msg: "Very low quantity — setup cost amortised over fewer pieces.",
+      msg: "Low quantity - setup cost dominates per-unit price.",
     });
   if (Q > 1000)
-    warns.push({
+    w.push({
       lvl: "info",
-      msg: "High volume order — negotiate bulk material discount.",
+      msg: "High volume order - consider negotiating bulk discount.",
     });
-  if ((part.finish || "").match(/mirror|polish/i))
-    warns.push({
+  if ((p.finish || "").match(/mirror|polish/i))
+    w.push({
       lvl: "warn",
       msg: "Mirror/polish finish adds ~20% cost and lead time.",
     });
-  const errs = warns.filter((w) => w.lvl === "error").length;
-  const warnCount = warns.filter((w) => w.lvl === "warn").length;
+  const e = w.filter((x) => x.lvl === "error").length,
+    wn = w.filter((x) => x.lvl === "warn").length;
   return {
-    warnings: warns,
-    complexity: errs > 0 ? "High" : warnCount > 1 ? "Medium" : "Low",
-    score: errs > 0 ? 0 : warnCount > 1 ? 50 : 100,
+    warnings: w,
+    complexity: e > 0 ? "High" : wn > 1 ? "Medium" : "Low",
   };
 }
 
-function calcLeadTime(part, mhrs) {
-  const Q = +part.quantity || 1;
-  const T = +part.thickness || 5;
+function calcLT(p, mhrs) {
+  const Q = +p.quantity || 1,
+    T = +p.thickness || 5;
   const qF = Math.max(1, Math.ceil(Q / 50));
   const tF = T > 20 ? 1.5 : T > 10 ? 1.2 : 1;
-  const cF = ["CNC Machining", "EDM", "Milling", "Turning"].includes(
-    part.process,
-  )
+  const cF = ["CNC Machining", "EDM", "Milling", "Turning"].includes(p.process)
     ? 1.5
     : 1;
-  const noFinish =
-    !part.finish ||
-    ["raw", "raw / no finish", "none", ""].includes(
-      (part.finish || "").toLowerCase(),
-    );
-
+  const noFin =
+    !p.finish ||
+    ["raw", "none", "standard", ""].includes((p.finish || "").toLowerCase());
   const stages = [
-    {
-      label: "Order Confirmation",
-      days: 1,
-      color: "#38bdf8",
-      desc: "PO sign-off, drawing review",
-    },
+    { label: "Order Confirmation", days: 1, color: "#4f8fff" },
     {
       label: "Material Procurement",
       days: Math.ceil((T > 15 ? 3 : 2) * tF),
-      color: "#818cf8",
-      desc: "Source & receive raw stock",
+      color: "#a78bfa",
     },
-    {
-      label: "Machine Setup",
-      days: Math.ceil(cF),
-      color: "#f59e0b",
-      desc: "NC programming & tooling",
-    },
+    { label: "Machine Setup", days: Math.ceil(cF), color: "#f59e0b" },
     {
       label: "Manufacturing",
       days: Math.max(1, Math.ceil((mhrs * qF * cF) / 8)),
       color: "#10b981",
-      desc: `${part.process} — ${(mhrs * Q).toFixed(1)} machine-hrs`,
     },
     {
       label: "Quality Inspection",
       days: Math.max(1, Math.ceil(Q / 200)),
       color: "#06b6d4",
-      desc: "Dimensional & surface check",
     },
-    ...(!noFinish
+    ...(!noFin
       ? [
           {
             label: "Surface Finishing",
             days: Math.max(1, Math.ceil(Q / 100)),
             color: "#ec4899",
-            desc: part.finish,
           },
         ]
       : []),
-    {
-      label: "Packing & Dispatch",
-      days: 1,
-      color: "#84cc16",
-      desc: "Pack, label, book freight",
-    },
+    { label: "Packing & Dispatch", days: 1, color: "#84cc16" },
   ];
   let cum = 0;
-  const schedule = stages.map((s) => {
-    const st = cum + 1;
-    cum += s.days;
-    return { ...s, start: st, end: cum };
+  return {
+    schedule: stages.map((s) => {
+      const st = cum + 1;
+      cum += s.days;
+      return { ...s, start: st, end: cum };
+    }),
+    total: cum,
+  };
+}
+
+function regexParse(txt) {
+  if (!txt) return {};
+  const g = (pats) => {
+    for (const p of pats) {
+      const m = txt.match(p);
+      if (m) return m[1]?.trim() || "";
+    }
+    return "";
+  };
+  let mat = "",
+    proc = "";
+  for (const m of MATS) {
+    if (txt.toLowerCase().includes(m.name.toLowerCase())) {
+      mat = m.name;
+      break;
+    }
+  }
+  for (const pr of PROCS) {
+    if (txt.toLowerCase().includes(pr.name.toLowerCase())) {
+      proc = pr.name;
+      break;
+    }
+  }
+  const sz = txt.match(/([0-9.]+)\s*[xXx]\s*([0-9.]+)\s*mm/i);
+  const qty = g([
+    /(?:quantity|qty)[:\s]+([0-9,]+)/i,
+    /([0-9,]+)\s*(?:pcs|pieces|nos|units)/i,
+  ]).replace(/,/g, "");
+  const rd = g([
+    /(?:required|deliver(?:y|ed)?)\s*(?:within|in|by)[:\s]+([0-9]+)\s*(?:days?|working)/i,
+    /within\s+([0-9]+)\s*days?/i,
+  ]);
+  return {
+    material: mat,
+    process: proc,
+    thickness: g([
+      /(?:thickness|thk|t\s*=)[:\s]*([0-9.]+)\s*mm/i,
+      /([0-9.]+)\s*mm\s*(?:thk|thick)/i,
+    ]),
+    length: sz ? sz[1] : g([/(?:length|l\s*=)[:\s]*([0-9.]+)/i]),
+    width: sz ? sz[2] : g([/(?:width|w\s*=)[:\s]*([0-9.]+)/i]),
+    quantity: qty,
+    finish: g([/(?:finish|surface|coating)[:\s]+([A-Za-z .\-]+?)(?:\n|,|$)/i]),
+    client: g([
+      /(?:from|client|company)[:\s]+([A-Za-z0-9 &.,]+?)(?:\n|,|$)/i,
+      /dear\s+(?:sir,?\s*)?([A-Za-z ]+)/i,
+    ]),
+    delivery: g([
+      /(?:deliver(?:y)?\s*(?:to|location)|ship\s*to)[:\s]+([A-Za-z ,]+?)(?:\n|$)/i,
+    ]),
+    required_days: rd,
+  };
+}
+
+function mergeData(ai, rx) {
+  if (!ai) return rx || {};
+  if (!rx) return ai;
+  const z = (v) => !v || v === "0" || v === 0;
+  return {
+    material: ai.material || rx.material || "",
+    process: ai.process || rx.process || "",
+    thickness: z(ai.thickness) ? rx.thickness || ai.thickness : ai.thickness,
+    length: z(ai.length) ? rx.length || ai.length : ai.length,
+    width: z(ai.width) ? rx.width || ai.width : ai.width,
+    quantity: z(ai.quantity) ? rx.quantity || ai.quantity : ai.quantity,
+    finish: ai.finish || rx.finish || "",
+    client: ai.client || rx.client || "",
+    delivery: ai.delivery || rx.delivery || "",
+    required_days: z(ai.required_days)
+      ? rx.required_days || ai.required_days
+      : ai.required_days,
+  };
+}
+
+/* ====================================
+   AI EXTRACTION - LLAMA 3.3 via GROQ
+   Free API: console.groq.com
+   30 req/min, no credit card needed
+   Tesseract.js OCR for drawings
+   Smart regex as final fallback
+==================================== */
+function buildSysPrompt() {
+  const ML = MATS.map((m) => m.name).join(", ");
+  const PL = PROCS.map((p) => p.name).join(", ");
+  return `You are a manufacturing RFQ data extractor. Extract parameters from client emails and/or OCR text from engineering drawings. Return ONLY a JSON object with no markdown, no explanation.
+
+ALLOWED MATERIALS: ${ML}
+ALLOWED PROCESSES: ${PL}
+
+Required JSON keys:
+- material: string matching ALLOWED MATERIALS exactly ("" if none)
+- process: string matching ALLOWED PROCESSES exactly ("" if none)
+- thickness: number in mm (0 if not found)
+- length: number in mm (0 if not found)
+- width: number in mm (0 if not found)
+- quantity: integer (0 if not found)
+- finish: string e.g. "Powder Coat", "Anodize", "" if none
+- client: company or person name ("" if none)
+- delivery: city or location ("" if none)
+- required_days: integer delivery days (0 if not specified)
+
+RULES:
+- "MS" = Mild Steel, "SS" = Stainless Steel 304, "AL"/"Alum" = Aluminium 6061
+- "Laser"=Laser Cutting, "CNC"=CNC Machining, "Press brake"=Bending
+- Look for dimensions like "200x100x5 THK", "L=200 W=100 T=5mm", title block values
+- Drawing dimensions take priority over email text
+- "within 10 days" or "10 days delivery" => required_days: 10`;
+}
+
+function safeJSON(raw) {
+  if (!raw) return null;
+  try {
+    const c = raw.replace(/\`\`\`json|\`\`\`/gi, "").trim();
+    const m = c.match(/\{[\s\S]+\}/);
+    if (!m) return null;
+    return JSON.parse(m[0]);
+  } catch {
+    return null;
+  }
+}
+
+async function callGroq(text, apiKey, model) {
+  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + apiKey,
+    },
+    body: JSON.stringify({
+      model: model || "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: buildSysPrompt() },
+        {
+          role: "user",
+          content:
+            "Extract manufacturing parameters from this RFQ:\n\n" +
+            text +
+            "\n\nJSON:",
+        },
+      ],
+      max_tokens: 512,
+      temperature: 0,
+      response_format: { type: "json_object" },
+    }),
   });
-  return { schedule, total: cum };
+  const d = await r.json();
+  if (!r.ok) throw new Error(d?.error?.message || "Groq " + r.status);
+  const raw = d?.choices?.[0]?.message?.content || "";
+  const j = safeJSON(raw);
+  if (!j) throw new Error("Llama returned no valid JSON");
+  return j;
+}
+
+async function loadTesseract() {
+  if (window.Tesseract) return window.Tesseract;
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src =
+      "https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.3/tesseract.min.js";
+    s.onload = () => res(window.Tesseract);
+    s.onerror = () => rej(new Error("Tesseract CDN failed"));
+    document.head.appendChild(s);
+  });
+}
+
+async function ocrImage(file, onPct) {
+  const Tess = await loadTesseract();
+  const url = URL.createObjectURL(file);
+  try {
+    const res = await Tess.recognize(url, "eng", {
+      logger: (m) => {
+        if (m.status === "recognizing text" && onPct)
+          onPct(Math.round(m.progress * 100));
+      },
+    });
+    return res.data.text || "";
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function aiExtract(emailText, imageFiles, apiKey, onProgress) {
+  const imgs = (imageFiles || []).filter(
+    (f) => f && f.type && f.type.startsWith("image/"),
+  );
+  const hasTxt = emailText && emailText.trim().length > 5;
+  const hasImgs = imgs.length > 0;
+
+  /* OCR all drawings */
+  let ocrText = "";
+  if (hasImgs) {
+    onProgress("ocr", 0, "Running Tesseract OCR on drawings...");
+    const parts = [];
+    for (let i = 0; i < imgs.length; i++) {
+      try {
+        const t = await ocrImage(imgs[i], (pct) =>
+          onProgress(
+            "ocr",
+            Math.round((i / imgs.length) * 100 + pct / imgs.length),
+            "OCR drawing " + (i + 1) + "/" + imgs.length + "...",
+          ),
+        );
+        if (t.trim()) parts.push("[DRAWING " + (i + 1) + "]\n" + t.trim());
+      } catch (e) {
+        console.warn("OCR failed", e);
+      }
+    }
+    ocrText = parts.join("\n\n");
+    onProgress("ocr", 100, "OCR complete");
+  }
+
+  /* Combine text sources */
+  const combined = [
+    hasTxt ? "[CLIENT EMAIL]\n" + emailText.trim() : "",
+    ocrText ? ocrText : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+
+  /* Regex always runs as base */
+  const rx = regexParse(combined);
+
+  if (!combined.trim()) {
+    return { data: rx, src: "Smart Rules (no input)" };
+  }
+
+  /* Llama via Groq - try 3 models in order */
+  if (apiKey && apiKey.startsWith("gsk_")) {
+    const models = [
+      "llama-3.3-70b-versatile",
+      "llama-3.1-70b-versatile",
+      "llama-3.1-8b-instant",
+    ];
+    for (const model of models) {
+      try {
+        onProgress("ai", 20, "Calling " + model + " via Groq...");
+        const j = await callGroq(combined, apiKey, model);
+        onProgress("ai", 100, "Extraction complete");
+        const src =
+          hasImgs && hasTxt
+            ? "Llama 3.3 70B + Tesseract OCR (Email + Drawing)"
+            : hasImgs
+              ? "Llama 3.3 70B + Tesseract OCR (Drawing)"
+              : "Llama 3.3 70B (Email)";
+        return { data: mergeData(j, rx), src };
+      } catch (e) {
+        console.warn("[" + model + "]", e.message);
+      }
+    }
+  }
+
+  /* Regex fallback */
+  onProgress("ai", 100, "Done (smart rules)");
+  return { data: rx, src: "Smart Rules" + (ocrText ? " + OCR" : "") };
+}
+
+function toBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(",")[1]);
+    r.onerror = () => rej(new Error("Read failed"));
+    r.readAsDataURL(file);
+  });
+}
+
+function safeStr(s) {
+  return (
+    String(s || "-")
+      .replace(/[\u{1F000}-\u{1FFFF}]/gu, "")
+      .replace(/[\u2600-\u27BF]/g, "")
+      .replace(/[^\x00-\x7E]/g, "")
+      .trim() || "-"
+  );
 }
 
 function genQID() {
   const d = new Date();
-  const yr = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const dy = String(d.getDate()).padStart(2, "0");
-  return `QT-${yr}${mo}${dy}-${Math.floor(1000 + Math.random() * 9000)}`;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// AI EXTRACTION
-// ════════════════════════════════════════════════════════════════════════════
-async function callAI(messages, maxTokens = 2000) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: maxTokens,
-      messages,
-    }),
-  });
-  if (!res.ok) throw new Error(`API ${res.status}`);
-  const data = await res.json();
-  return data.content?.map((b) => b.text || "").join("") || "";
-}
-
-async function extractFromText(text) {
-  const prompt = `You are an expert fabrication engineer. Extract ALL details from this RFQ email/text.
-
-Return ONLY a valid JSON object — no markdown, no explanation:
-{
-  "client": {
-    "company": "", "name": "", "email": "", "phone": "",
-    "address": "", "city": "", "state": "", "pincode": "", "country": "India",
-    "gst": "", "pan": "", "required_days": "", "payment_terms": "", "incoterms": ""
-  },
-  "parts": [
-    {
-      "partName": "", "drawingNo": "", "description": "",
-      "material": "", "process": "",
-      "length": "", "width": "", "height": "",
-      "thickness": "", "diameter": "",
-      "quantity": "", "finish": "",
-      "tolerance": "", "hardness": "", "notes": ""
-    }
-  ],
-  "order_notes": ""
-}
-
-Rules:
-- material must be one of: ${MATERIALS.map((m) => m.name).join(", ")}
-- process must be one of: ${PROCESSES.map((p) => p.name).join(", ")}
-- use numbers only for mm/qty/days — no units in values
-- extract EVERY part mentioned, each as a separate object
-- empty string for anything not found
-
-Text:
-${text}`;
-
-  const txt = await callAI([{ role: "user", content: prompt }], 2000);
-  return JSON.parse(txt.replace(/```json|```/g, "").trim());
-}
-
-async function extractFromPDF(base64Data, mimeType) {
-  const prompt = `You are an expert fabrication engineer. This document is a client RFQ (Request for Quotation) — it may contain an email, specification sheet, engineering drawing, or all of the above.
-
-Extract ALL manufacturing and client details you can find.
-
-Return ONLY valid JSON — no markdown, no explanation:
-{
-  "client": {
-    "company": "", "name": "", "email": "", "phone": "",
-    "address": "", "city": "", "state": "", "pincode": "", "country": "India",
-    "gst": "", "pan": "", "required_days": "", "payment_terms": "", "incoterms": ""
-  },
-  "parts": [
-    {
-      "partName": "", "drawingNo": "", "description": "",
-      "material": "", "process": "",
-      "length": "", "width": "", "height": "",
-      "thickness": "", "diameter": "",
-      "quantity": "", "finish": "",
-      "tolerance": "", "hardness": "", "notes": "",
-      "extracted_from_drawing": true
-    }
-  ],
-  "drawing_info": {
-    "has_drawing": false,
-    "drawing_title": "",
-    "revision": "",
-    "scale": "",
-    "projection": "",
-    "surface_roughness": "",
-    "general_tolerance": "",
-    "material_spec": "",
-    "heat_treatment": "",
-    "notes": []
-  },
-  "order_notes": ""
-}
-
-Rules:
-- material must be one of: ${MATERIALS.map((m) => m.name).join(", ")}
-- process must be one of: ${PROCESSES.map((p) => p.name).join(", ")}
-- values for mm/qty/days — numbers only, no units
-- extract EVERY part / component found
-- read title block, BOM table, notes block, revision history
-- empty string for missing fields`;
-
-  const txt = await callAI(
-    [
-      {
-        role: "user",
-        content: [
-          {
-            type: "document",
-            source: { type: "base64", media_type: mimeType, data: base64Data },
-          },
-          { type: "text", text: prompt },
-        ],
-      },
-    ],
-    3000,
-  );
-  return JSON.parse(txt.replace(/```json|```/g, "").trim());
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// PROFESSIONAL PDF QUOTATION BUILDER
-// ════════════════════════════════════════════════════════════════════════════
-function buildQuotationHTML({
-  qid,
-  client,
-  parts,
-  costsArr,
-  extraRows,
-  extraTotal,
-  grandTotal,
-  co,
-  currency,
-  ltArr,
-  drawingInfo,
-}) {
-  const curr = CURRENCIES.find((c) => c.code === currency) || CURRENCIES[0];
-  const fmt = (v) =>
-    `${curr.sym}${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("en-IN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  const validUntil = new Date(
-    now.getTime() + 30 * 24 * 60 * 60 * 1000,
-  ).toLocaleDateString("en-IN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  const totalPcs = parts.reduce((s, p) => s + (+p.quantity || 0), 0);
-
-  const partsTableRows = parts
-    .map((p, i) => {
-      const c = costsArr[i];
-      if (!c) return "";
-      return `
-    <tr>
-      <td class="ctr" style="font-weight:700;color:#1e293b">${i + 1}</td>
-      <td>
-        <div style="font-weight:700;color:#0f172a;font-size:13px">${p.partName || `Part ${i + 1}`}</div>
-        ${p.drawingNo ? `<div style="font-size:10px;color:#64748b;font-family:'Courier New',monospace">Dwg: ${p.drawingNo}</div>` : ""}
-        ${p.description ? `<div style="font-size:11px;color:#475569;margin-top:2px">${p.description}</div>` : ""}
-      </td>
-      <td>
-        <div style="font-weight:600;font-size:12px">${p.material}</div>
-        <div style="font-size:10px;color:#64748b">${p.process}</div>
-        ${p.finish && p.finish !== "Raw / No Finish" ? `<div style="font-size:10px;color:#64748b">${p.finish}</div>` : ""}
-      </td>
-      <td class="ctr" style="font-family:'Courier New',monospace;font-size:11px">
-        ${p.length && p.width ? `${p.length}×${p.width}` : "—"}
-        ${p.thickness ? `<br><span style="color:#94a3b8">t:${p.thickness}mm</span>` : ""}
-      </td>
-      <td class="ctr" style="font-weight:700">${p.quantity}</td>
-      <td class="ctr" style="font-family:'Courier New',monospace">${fmt(c.per_part)}</td>
-      <td class="ctr" style="font-weight:700;color:#1d4ed8;font-family:'Courier New',monospace">${fmt(c.total)}</td>
-    </tr>`;
-    })
-    .join("");
-
-  const costDetailRows = parts
-    .map((p, i) => {
-      const c = costsArr[i];
-      if (!c) return "";
-      const rows = [
-        [
-          "Raw Material",
-          `${p.material} · ${c.weight.toFixed(4)} kg · ₹${c.mat.ppkg}/kg`,
-          c.material,
-        ],
-        ["Machining", `${p.process} · ${c.mhrs.toFixed(3)} hrs`, c.machine],
-        ["Labour", "Operator + supervision", c.labor],
-        ["Setup & Prog.", `NC programming & ${p.process} setup`, c.setup],
-        ["Surface Finish", p.finish || "Standard", c.finishing],
-        ["Packaging", "Protective export packing per piece", c.packaging],
-        [
-          "Transport",
-          `Freight to ${client.city || "destination"}`,
-          c.transport,
-        ],
-        [
-          `Profit (${(co.margin * 100).toFixed(0)}%)`,
-          "Overhead & margin",
-          c.profit,
-        ],
-      ];
-      return `
-    <div class="cost-block" style="break-inside:avoid;margin-bottom:16px">
-      <div style="background:#0f172a;color:#fff;padding:8px 14px;border-radius:6px 6px 0 0;font-size:12px;font-weight:700;display:flex;justify-content:space-between">
-        <span>${p.partName || `Part ${i + 1}`} ${p.drawingNo ? `— ${p.drawingNo}` : ""}</span>
-        <span style="color:#38bdf8">${p.quantity} pcs</span>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden">
-        ${rows
-          .map(
-            ([k, d, v]) => `
-        <tr>
-          <td style="padding:7px 14px;color:#475569;border-bottom:1px solid #f1f5f9;width:160px;font-weight:600">${k}</td>
-          <td style="padding:7px 14px;color:#94a3b8;border-bottom:1px solid #f1f5f9;font-size:11px">${d}</td>
-          <td style="padding:7px 14px;text-align:right;border-bottom:1px solid #f1f5f9;font-family:'Courier New',monospace;font-weight:600;width:100px">${fmt(v)}</td>
-        </tr>`,
-          )
-          .join("")}
-        <tr style="background:#eff6ff">
-          <td colspan="2" style="padding:9px 14px;font-weight:800;font-size:13px;color:#1d4ed8">TOTAL (${p.quantity} pcs)</td>
-          <td style="padding:9px 14px;text-align:right;font-weight:800;font-size:14px;color:#1d4ed8;font-family:'Courier New',monospace">${fmt(c.total)}</td>
-        </tr>
-        <tr style="background:#f8fafc">
-          <td colspan="2" style="padding:6px 14px;font-size:11px;color:#94a3b8">Unit price per piece</td>
-          <td style="padding:6px 14px;text-align:right;font-size:12px;font-family:'Courier New',monospace;color:#64748b">${fmt(c.per_part)}</td>
-        </tr>
-      </table>
-    </div>`;
-    })
-    .join("");
-
-  const extrasSection =
-    extraRows.length > 0
-      ? `
-  <div style="margin-bottom:20px">
-    <h3 style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#64748b;margin:0 0 10px">ADDITIONAL CHARGES</h3>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      ${extraRows
-        .map(
-          (e) => `
-      <tr>
-        <td style="padding:6px 0;border-bottom:1px solid #f1f5f9;color:#475569;font-weight:600">${e.label}</td>
-        <td style="padding:6px 0;border-bottom:1px solid #f1f5f9;text-align:right;font-family:'Courier New',monospace;font-weight:600">${fmt(e.computed)}</td>
-      </tr>`,
-        )
-        .join("")}
-    </table>
-  </div>`
-      : "";
-
-  const ltSection = ltArr.some(Boolean)
-    ? `
-  <div style="margin-top:20px;break-inside:avoid">
-    <h3 style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#64748b;margin:0 0 12px">PRODUCTION SCHEDULE</h3>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      ${parts
-        .map((p, i) =>
-          ltArr[i]
-            ? `
-      <tr>
-        <td style="padding:5px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;width:200px">${p.partName || `Part ${i + 1}`}</td>
-        <td style="padding:5px 0;border-bottom:1px solid #f1f5f9">
-          ${ltArr[i].schedule.map((s) => `<span style="font-size:10px;background:#f1f5f9;border-radius:4px;padding:2px 6px;margin:2px;display:inline-block">${s.label}: ${s.days}d</span>`).join("")}
-        </td>
-        <td style="padding:5px 0;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:700;color:#10b981">${ltArr[i].total} working days</td>
-      </tr>`
-            : "",
-        )
-        .join("")}
-    </table>
-    ${
-      client.required_days
-        ? (() => {
-            const maxLt = Math.max(
-              ...ltArr.filter(Boolean).map((l) => l.total),
-            );
-            const ok = maxLt <= +client.required_days;
-            return `<div style="margin-top:10px;padding:8px 12px;background:${ok ? "#f0fdf4" : "#fef2f2"};border:1px solid ${ok ? "#bbf7d0" : "#fecaca"};border-radius:6px;font-size:12px;font-weight:600;color:${ok ? "#15803d" : "#dc2626"}">
-        ${ok ? `✅ All parts can be delivered within client target (${client.required_days} days). Longest lead: ${maxLt} days.` : `⚠ Max lead time (${maxLt} days) may exceed client target (${client.required_days} days). Discuss expediting options.`}
-      </div>`;
-          })()
-        : ""
-    }
-  </div>`
-    : "";
-
-  const drawingSection = drawingInfo?.has_drawing
-    ? `
-  <div style="margin-top:20px;padding:12px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;break-inside:avoid">
-    <h3 style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#64748b;margin:0 0 10px">DRAWING REFERENCE</h3>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-size:12px">
-      ${drawingInfo.drawing_title ? `<div><span style="color:#94a3b8">Title:</span> <b>${drawingInfo.drawing_title}</b></div>` : ""}
-      ${drawingInfo.revision ? `<div><span style="color:#94a3b8">Rev:</span> <b>${drawingInfo.revision}</b></div>` : ""}
-      ${drawingInfo.scale ? `<div><span style="color:#94a3b8">Scale:</span> <b>${drawingInfo.scale}</b></div>` : ""}
-      ${drawingInfo.general_tolerance ? `<div><span style="color:#94a3b8">Gen. Tolerance:</span> <b>${drawingInfo.general_tolerance}</b></div>` : ""}
-      ${drawingInfo.surface_roughness ? `<div><span style="color:#94a3b8">Surface Ra:</span> <b>${drawingInfo.surface_roughness}</b></div>` : ""}
-      ${drawingInfo.material_spec ? `<div><span style="color:#94a3b8">Material Spec:</span> <b>${drawingInfo.material_spec}</b></div>` : ""}
-    </div>
-    ${drawingInfo.notes?.length ? `<div style="margin-top:8px;font-size:11px;color:#64748b"><b>Drawing Notes:</b> ${drawingInfo.notes.join(" · ")}</div>` : ""}
-  </div>`
-    : "";
-
-  return `<!DOCTYPE html><html lang="en"><head>
-<meta charset="UTF-8"><title>${qid} — Quotation</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Barlow:wght@300;400;500;600;700&display=swap');
-body{font-family:'Barlow',system-ui,sans-serif;background:#fff;color:#1e293b;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:13px;line-height:1.5}
-.page{max-width:860px;margin:0 auto;background:#fff}
-.hdr{background:linear-gradient(135deg,#050c18 0%,#0f2544 50%,#0a1e3d 100%);color:#fff;padding:0}
-.hdr-top{display:flex;justify-content:space-between;align-items:stretch;min-height:100px}
-.hdr-brand{padding:28px 36px;border-right:1px solid rgba(255,255,255,.1)}
-.brand-name{font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:900;letter-spacing:-1px;line-height:1}
-.brand-name span{color:#38bdf8}
-.brand-sub{font-size:11px;color:#64748b;margin-top:4px;letter-spacing:.5px}
-.hdr-meta{padding:20px 36px;flex:1;display:flex;flex-direction:column;justify-content:center}
-.hdr-right{padding:20px 36px;text-align:right;display:flex;flex-direction:column;justify-content:center;min-width:200px;border-left:1px solid rgba(255,255,255,.1)}
-.qt-label{font-family:'Barlow Condensed',sans-serif;font-size:40px;font-weight:900;letter-spacing:2px;color:#fff;line-height:1}
-.qt-id{font-size:12px;color:#38bdf8;font-family:'Courier New',monospace;margin-top:4px}
-.qt-date{font-size:11px;color:#475569;margin-top:2px}
-.stripe{height:4px;background:linear-gradient(90deg,#38bdf8,#818cf8,#34d399,#f59e0b)}
-.body{padding:28px 36px}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
-.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px}
-.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px}
-.box{background:#f8fafc;border-radius:8px;padding:14px 18px;border:1px solid #e2e8f0}
-.box-dark{background:#0f172a;border-radius:8px;padding:14px 18px}
-.box h4{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;margin-bottom:10px}
-.kv{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid #f1f5f9}
-.kv:last-child{border:none}.kv .k{color:#64748b}.kv .v{font-weight:600;color:#1e293b}
-.stat{background:#f8fafc;border-radius:8px;padding:12px;text-align:center;border:1px solid #e2e8f0}
-.stat .sl{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;margin-bottom:4px}
-.stat .sv{font-size:20px;font-weight:800;color:#0f172a}
-h3.sec{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#64748b;margin:0 0 12px;padding-bottom:6px;border-bottom:2px solid #f1f5f9}
-table.parts{width:100%;border-collapse:collapse;margin-bottom:4px;font-size:12px}
-table.parts th{background:#0f172a;color:#94a3b8;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;padding:9px 12px;text-align:left}
-table.parts th.ctr{text-align:center}
-table.parts td{padding:10px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top}
-table.parts td.ctr{text-align:center}
-table.parts .sub-row td{background:#f8fafc;font-size:11px}
-.totals{width:100%;max-width:340px;margin-left:auto;margin-bottom:20px}
-.totals tr td{padding:6px 0;font-size:13px}
-.totals .grand td{font-size:18px;font-weight:800;color:#1d4ed8;padding-top:10px;border-top:2px solid #1d4ed8}
-.badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:2px 7px;border-radius:4px}
-.terms{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}
-.term{background:#f8fafc;border-radius:6px;padding:10px 12px;border:1px solid #e2e8f0}
-.term .tl{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:3px}
-.term .tv{font-size:12px;font-weight:700;color:#0f172a}
-.ftr{background:#0f172a;padding:18px 36px;display:flex;justify-content:space-between;align-items:center;margin-top:4px}
-.ftr-l{font-size:11px;color:#475569;line-height:1.9}
-.ftr-r{text-align:right}
-.sig-line{width:160px;height:1px;background:#334155;margin:24px 0 4px;margin-left:auto}
-.sig-name{font-size:11px;color:#475569;text-align:right}
-.watermark{position:fixed;bottom:40px;right:40px;font-size:10px;color:#e2e8f0;letter-spacing:1px;transform:rotate(-45deg);pointer-events:none;font-family:'Courier New',monospace}
-@media print{
-  body{margin:0}
-  .page{max-width:100%;margin:0;box-shadow:none}
-  .watermark{display:none}
-}
-</style>
-</head><body>
-<div class="page">
-  <div class="hdr">
-    <div class="hdr-top">
-      <div class="hdr-brand">
-        <div class="brand-name">RFQ<span>Analyzer</span></div>
-        <div class="brand-name" style="font-size:18px;color:#64748b;margin-top:2px">PRO</div>
-        <div class="brand-sub">${co.name}</div>
-        ${co.addr ? `<div style="font-size:10px;color:#334155;margin-top:2px">${co.addr}</div>` : ""}
-        ${co.phone ? `<div style="font-size:10px;color:#334155">${co.phone}</div>` : ""}
-        ${co.gst ? `<div style="font-size:9px;color:#334155;font-family:'Courier New',monospace">GSTIN: ${co.gst}</div>` : ""}
-      </div>
-      <div class="hdr-meta">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div>
-            <div style="font-size:9px;color:#334155;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">BILL TO</div>
-            <div style="font-size:13px;font-weight:700;color:#fff">${client.company || client.name || "—"}</div>
-            ${client.name && client.company ? `<div style="font-size:11px;color:#64748b">${client.name}</div>` : ""}
-            ${client.email ? `<div style="font-size:11px;color:#64748b">${client.email}</div>` : ""}
-            ${client.phone ? `<div style="font-size:11px;color:#64748b">${client.phone}</div>` : ""}
-            ${client.gst ? `<div style="font-size:10px;color:#334155;font-family:'Courier New',monospace">GST: ${client.gst}</div>` : ""}
-          </div>
-          <div>
-            <div style="font-size:9px;color:#334155;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">SHIP TO</div>
-            ${client.address ? `<div style="font-size:11px;color:#64748b">${client.address}</div>` : ""}
-            <div style="font-size:11px;color:#64748b">${[client.city, client.state, client.pincode].filter(Boolean).join(", ") || "—"}</div>
-            ${client.country ? `<div style="font-size:11px;color:#64748b">${client.country}</div>` : ""}
-            ${client.required_days ? `<div style="font-size:11px;color:#f59e0b;margin-top:4px;font-weight:600">📅 Required: ${client.required_days} days</div>` : ""}
-          </div>
-        </div>
-      </div>
-      <div class="hdr-right">
-        <div class="qt-label">QUOTATION</div>
-        <div class="qt-id">${qid}</div>
-        <div class="qt-date">${dateStr}</div>
-        <div style="margin-top:12px;font-size:9px;color:#334155;letter-spacing:1px">VALID UNTIL</div>
-        <div style="font-size:11px;color:#64748b;font-weight:600">${validUntil}</div>
-        ${client.payment_terms ? `<div style="margin-top:6px;font-size:10px;color:#64748b">${client.payment_terms}</div>` : ""}
-      </div>
-    </div>
-  </div>
-  <div class="stripe"></div>
-
-  <div class="body">
-    <!-- KPI row -->
-    <div class="g4">
-      <div class="stat"><div class="sl">Total Parts</div><div class="sv">${parts.length}</div></div>
-      <div class="stat"><div class="sl">Total Pieces</div><div class="sv">${totalPcs.toLocaleString()}</div></div>
-      <div class="stat"><div class="sl">Grand Total</div><div class="sv" style="color:#1d4ed8;font-size:16px">${fmt(grandTotal + extraTotal)}</div></div>
-      <div class="stat"><div class="sl">Currency</div><div class="sv" style="font-size:16px">${currency}</div></div>
-    </div>
-
-    <!-- Parts summary -->
-    <h3 class="sec">PART SUMMARY & PRICING</h3>
-    <table class="parts">
-      <tr>
-        <th class="ctr" style="width:32px">#</th>
-        <th>Part / Drawing</th>
-        <th>Material & Process</th>
-        <th class="ctr">Dimensions</th>
-        <th class="ctr" style="width:50px">Qty</th>
-        <th class="ctr">Unit Price</th>
-        <th class="ctr">Amount</th>
-      </tr>
-      ${partsTableRows}
-    </table>
-
-    <!-- Totals -->
-    <table class="totals">
-      <tr><td style="color:#64748b">Parts Subtotal</td><td style="text-align:right;font-family:'Courier New',monospace;font-weight:600">${fmt(costsArr.reduce((s, c) => s + (c?.total || 0), 0))}</td></tr>
-      ${extraRows.map((e) => `<tr><td style="color:#64748b">${e.label}</td><td style="text-align:right;font-family:'Courier New',monospace;font-weight:600">${fmt(e.computed)}</td></tr>`).join("")}
-      <tr class="grand"><td>GRAND TOTAL (${currency})</td><td style="text-align:right;font-family:'Courier New',monospace">${fmt(grandTotal + extraTotal)}</td></tr>
-    </table>
-
-    ${drawingSection}
-
-    <!-- Detailed cost breakdown -->
-    <div style="margin-top:24px;break-before:page">
-      <h3 class="sec">DETAILED COST BREAKDOWN</h3>
-      ${costDetailRows}
-    </div>
-
-    ${extrasSection}
-    ${ltSection}
-
-    <!-- Terms grid -->
-    <div class="terms">
-      <div class="term"><div class="tl">Payment Terms</div><div class="tv">${client.payment_terms || "50% Advance"}</div></div>
-      <div class="term"><div class="tl">Quote Validity</div><div class="tv">30 Days</div></div>
-      <div class="term"><div class="tl">Incoterms</div><div class="tv">${client.incoterms || "Ex-Works"}</div></div>
-      <div class="term"><div class="tl">Revision</div><div class="tv">Rev 01</div></div>
-    </div>
-
-    <!-- T&C -->
-    <div style="margin-top:14px;padding:12px 16px;background:#f8fafc;border-radius:6px;font-size:10px;color:#64748b;line-height:1.8;border:1px solid #e2e8f0">
-      <b style="color:#475569">Terms & Conditions:</b>
-      Prices are valid for 30 days from quotation date.
-      Payment: ${client.payment_terms || "50% advance with order, balance before dispatch"}.
-      Delivery lead times are indicative and subject to material availability.
-      Prices are exclusive of taxes unless stated. GST/applicable taxes charged extra.
-      All disputes subject to the jurisdiction of courts in ${co.addr?.split(",")[0] || "Chennai"}.
-      This quotation is subject to final engineering review and drawing approval.
-    </div>
-
-    <!-- Signature -->
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:28px">
-      <div style="font-size:11px;color:#94a3b8;line-height:1.9">
-        Generated by <b style="color:#475569">RFQAnalyzer Pro</b><br>
-        Doc ID: ${qid} · ${dateStr}
-        ${drawingInfo?.has_drawing ? `<br><span style="color:#10b981">✓ Engineering drawing analysed by AI</span>` : ""}
-      </div>
-      <div>
-        <div class="sig-line"></div>
-        <div class="sig-name" style="color:#0f172a;font-weight:700">${co.name}</div>
-        <div class="sig-name">Authorised Signatory</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="ftr">
-    <div class="ftr-l">
-      <b style="color:#fff">RFQAnalyzer Pro</b> — Fabrication Quotation System<br>
-      ${co.addr || ""} ${co.phone ? `· ${co.phone}` : ""}<br>
-      ${co.gst ? `GSTIN: ${co.gst}` : ""}
-    </div>
-    <div class="ftr-r" style="font-size:10px;color:#334155">
-      Page 1 of 1<br>
-      ${qid}<br>
-      ${dateStr}
-    </div>
-  </div>
-</div>
-</body></html>`;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// DESIGN SYSTEM — Industrial Precision
-// ════════════════════════════════════════════════════════════════════════════
-const T = {
-  // Colours
-  bg: "#03080f",
-  surface: "#07101e",
-  card: "#0c1828",
-  cardHi: "#101f30",
-  border: "#162033",
-  borderHi: "#1e3048",
-  accent: "#00d4ff",
-  accent2: "#7c6af5",
-  green: "#00e698",
-  amber: "#f5a623",
-  red: "#ff4757",
-  pink: "#ff6b9d",
-  text: "#e8f0fe",
-  textMid: "#6b8ba4",
-  textDim: "#243448",
-  // Fonts
-  display: "'Barlow Condensed', sans-serif",
-  mono: "'Share Tech Mono', monospace",
-  body: "'Barlow', sans-serif",
-};
-
-const S = {
-  app: {
-    fontFamily: T.body,
-    background: T.bg,
-    minHeight: "100vh",
-    color: T.text,
-  },
-  topbar: {
-    background: T.surface,
-    borderBottom: `1px solid ${T.border}`,
-    height: 56,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "0 28px",
-    position: "sticky",
-    top: 0,
-    zIndex: 200,
-    backdropFilter: "blur(10px)",
-  },
-  logo: {
-    fontFamily: T.display,
-    fontSize: 26,
-    fontWeight: 900,
-    letterSpacing: "-0.5px",
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
-  layout: {
-    display: "flex",
-    maxWidth: 1440,
-    margin: "0 auto",
-    width: "100%",
-    padding: "0 20px 60px",
-    gap: 4,
-  },
-  sidebar: { width: 210, flexShrink: 0, paddingTop: 20 },
-  main: { flex: 1, paddingTop: 20, minWidth: 0 },
-  card: {
-    background: T.card,
-    border: `1px solid ${T.border}`,
-    borderRadius: 12,
-    padding: "20px 22px",
-    marginBottom: 14,
-  },
-  cardHi: {
-    background: T.cardHi,
-    border: `1px solid ${T.borderHi}`,
-    borderRadius: 12,
-    padding: "20px 22px",
-    marginBottom: 14,
-  },
-  nav: (a) => ({
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "9px 14px",
-    borderRadius: 8,
-    cursor: "pointer",
-    marginBottom: 2,
-    background: a ? `${T.accent}14` : "transparent",
-    border: a ? `1px solid ${T.accent}30` : "1px solid transparent",
-    color: a ? T.accent : T.textMid,
-    fontWeight: a ? 700 : 500,
-    fontSize: 12,
-    fontFamily: T.body,
-    transition: "all .15s",
-  }),
-  navGrp: {
-    fontSize: 9,
-    fontWeight: 700,
-    letterSpacing: "2.5px",
-    textTransform: "uppercase",
-    color: T.textDim,
-    padding: "14px 14px 5px",
-  },
-  label: {
-    fontSize: 10,
-    fontWeight: 700,
-    color: T.textMid,
-    letterSpacing: "0.5px",
-    marginBottom: 5,
-    display: "flex",
-    gap: 4,
-    alignItems: "center",
-    textTransform: "uppercase",
-    fontFamily: T.body,
-  },
-  inp: {
-    background: T.surface,
-    border: `1px solid ${T.border}`,
-    borderRadius: 7,
-    padding: "9px 12px",
-    color: T.text,
-    fontSize: 13,
-    width: "100%",
-    outline: "none",
-    fontFamily: T.body,
-    boxSizing: "border-box",
-    transition: "border-color .15s",
-  },
-  sel: {
-    background: T.surface,
-    border: `1px solid ${T.border}`,
-    borderRadius: 7,
-    padding: "9px 12px",
-    color: T.text,
-    fontSize: 13,
-    width: "100%",
-    outline: "none",
-    fontFamily: T.body,
-    appearance: "none",
-    boxSizing: "border-box",
-  },
-  ta: {
-    background: T.surface,
-    border: `1px solid ${T.border}`,
-    borderRadius: 7,
-    padding: "12px 14px",
-    color: T.text,
-    fontSize: 12,
-    width: "100%",
-    outline: "none",
-    resize: "vertical",
-    minHeight: 160,
-    fontFamily: T.body,
-    lineHeight: 1.7,
-    boxSizing: "border-box",
-  },
-  btn: {
-    background: `linear-gradient(135deg,${T.accent},#0098b8)`,
-    color: "#000",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 22px",
-    fontSize: 12,
-    fontWeight: 800,
-    cursor: "pointer",
-    fontFamily: T.display,
-    letterSpacing: "1px",
-    textTransform: "uppercase",
-  },
-  btnGhost: {
-    background: "transparent",
-    color: T.textMid,
-    border: `1px solid ${T.border}`,
-    borderRadius: 8,
-    padding: "9px 20px",
-    fontSize: 12,
-    fontWeight: 700,
-    cursor: "pointer",
-    fontFamily: T.display,
-    letterSpacing: "1px",
-    textTransform: "uppercase",
-  },
-  btnGreen: {
-    background: `linear-gradient(135deg,${T.green},#00b873)`,
-    color: "#000",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 22px",
-    fontSize: 12,
-    fontWeight: 800,
-    cursor: "pointer",
-    fontFamily: T.display,
-    letterSpacing: "1px",
-    textTransform: "uppercase",
-  },
-  btnRed: {
-    background: `linear-gradient(135deg,${T.red},#cc0000)`,
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 22px",
-    fontSize: 12,
-    fontWeight: 800,
-    cursor: "pointer",
-    fontFamily: T.display,
-    letterSpacing: "1px",
-    textTransform: "uppercase",
-  },
-  hr: { height: 1, background: T.border, margin: "14px 0" },
-  g2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-  g3: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 },
-  g4: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 },
-  g5: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: 12 },
-};
-
-// ════════════════════════════════════════════════════════════════════════════
-// MICRO COMPONENTS
-// ════════════════════════════════════════════════════════════════════════════
-function Field({ label, children, required, hint, col2 }) {
   return (
-    <div style={col2 ? { gridColumn: "span 2" } : {}}>
-      <div style={S.label}>
-        {label}
-        {required && <span style={{ color: T.red }}>*</span>}
-        {hint && (
-          <span
-            style={{
-              color: T.textDim,
-              fontWeight: 400,
-              textTransform: "none",
-              letterSpacing: 0,
-              fontSize: 9,
-            }}
-          >
-            — {hint}
-          </span>
-        )}
-      </div>
-      {children}
-    </div>
+    "QT-" +
+    d.getFullYear() +
+    String(d.getMonth() + 1).padStart(2, "0") +
+    String(d.getDate()).padStart(2, "0") +
+    "-" +
+    Math.floor(1000 + Math.random() * 9000)
   );
 }
 
-function Tag({ color = T.accent, children, size = "sm" }) {
-  const sz =
-    size === "sm"
-      ? { fontSize: 8, padding: "2px 6px" }
-      : { fontSize: 10, padding: "3px 9px" };
+/* ====================================
+   PDF EXPORT
+==================================== */
+async function loadjsPDF() {
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  await new Promise((res, rej) => {
+    if (document.querySelector('script[src*="jspdf"]')) {
+      const iv = setInterval(() => {
+        if (window.jspdf?.jsPDF) {
+          clearInterval(iv);
+          res();
+        }
+      }, 120);
+      setTimeout(() => {
+        clearInterval(iv);
+        rej(new Error("jsPDF timeout"));
+      }, 12000);
+      return;
+    }
+    const s = document.createElement("script");
+    s.src =
+      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    s.onload = res;
+    s.onerror = () => rej(new Error("jsPDF CDN failed"));
+    document.head.appendChild(s);
+  });
+  if (!window.jspdf?.jsPDF) throw new Error("jsPDF unavailable");
+  return window.jspdf.jsPDF;
+}
+
+function h2rgb(h) {
+  return {
+    r: parseInt(h.slice(1, 3), 16),
+    g: parseInt(h.slice(3, 5), 16),
+    b: parseInt(h.slice(5, 7), 16),
+  };
+}
+
+async function exportPDF(qid, p, costs, feas, co, extras, lt) {
+  const jsPDF = await loadjsPDF();
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const ccy = costs.ccy;
+  const fmt = (v) => ccy.code + " " + Number(v || 0).toFixed(2);
+  const now = new Date().toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const PW = 210,
+    M = 14,
+    B = PW - M * 2,
+    PH = 297,
+    FH = 12;
+  let y = 0;
+
+  const foot = () => {
+    doc.setFillColor(7, 9, 15);
+    doc.rect(0, PH - FH, PW, FH, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(79, 143, 255);
+    doc.text("RFQAnalyzer", M, PH - 4);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(71, 85, 105);
+    doc.text(safeStr(co.name), M + 28, PH - 4);
+    doc.text(qid + "  |  " + now + "  |  Confidential", PW - M, PH - 4, {
+      align: "right",
+    });
+  };
+
+  const need = (h) => {
+    if (y + h > PH - FH - 8) {
+      foot();
+      doc.addPage();
+      y = 18;
+    }
+  };
+  const sh = (lbl) => {
+    need(10);
+    doc.setFillColor(7, 9, 15);
+    doc.rect(M, y, B, 7, "F");
+    doc.setTextColor(100, 116, 139);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.text(lbl.toUpperCase(), M + 3, y + 5);
+    y += 9;
+  };
+
+  /* HEADER */
+  doc.setFillColor(7, 9, 15);
+  doc.rect(0, 0, PW, 44, "F");
+  doc.setFillColor(79, 143, 255);
+  doc.rect(0, 44, PW, 2.5, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(255, 255, 255);
+  doc.text("RFQAnalyzer", M, 17);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    safeStr(co.name) + "  |  Fabrication Quotation  |  Llama 3.3 AI",
+    M,
+    25,
+  );
+  doc.text(now + "  |  Currency: " + ccy.code, M, 32);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.setTextColor(255, 255, 255);
+  doc.text("QUOTATION", PW - M, 17, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(148, 163, 184);
+  doc.text(qid, PW - M, 25, { align: "right" });
+  y = 50;
+
+  /* INFO BOXES */
+  const hf = (B - 4) / 2,
+    bH = 34;
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(M, y, hf, bH, 2, 2, "F");
+  doc.roundedRect(M + hf + 4, y, hf, bH, 2, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text("CLIENT", M + 3, y + 5);
+  doc.text("PART SPECIFICATIONS", M + hf + 7, y + 5);
+  const br = (k, v, ox, ry) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(k, M + 3 + ox, ry);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(30, 41, 59);
+    doc.text(safeStr(v).substring(0, 26), M + 3 + ox + 24, ry);
+  };
+  let by = y + 10;
+  br("Client", p.client || "-", 0, by);
+  br("Material", p.material || "-", hf + 4, by);
+  by += 5.5;
+  br("Delivery", p.delivery || "-", 0, by);
+  br("Thickness", (p.thickness || "-") + "mm", hf + 4, by);
+  by += 5.5;
+  br("Finish", p.finish || "Std", 0, by);
+  br("Size", (p.length || "-") + "x" + (p.width || "-") + "mm", hf + 4, by);
+  by += 5.5;
+  br("Target", p.required_days ? p.required_days + "d" : "N/A", 0, by);
+  br("Qty", p.quantity || "-" + " pcs | " + p.process || "-", hf + 4, by);
+  y += bH + 5;
+
+  /* STATS */
+  const sw = (B - 8) / 3;
+  [
+    ["Weight", costs.weight.toFixed(4) + " kg"],
+    ["Machine Hrs", costs.mhrs.toFixed(3) + " h"],
+    ["Unit Cost (" + ccy.code + ")", fmt(costs.per_part)],
+  ].forEach((st, i) => {
+    const sx = M + i * (sw + 4);
+    doc.setFillColor(239, 246, 255);
+    doc.roundedRect(sx, y, sw, 13, 2, 2, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text(st[0], sx + 3, y + 5);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(29, 78, 216);
+    doc.text(safeStr(st[1]), sx + 3, y + 11);
+  });
+  y += 17;
+
+  /* COST TABLE */
+  sh("Cost Breakdown (" + ccy.code + ")");
+  const c1 = M,
+    c2 = M + 8,
+    c3 = M + 56,
+    c4 = PW - M;
+  doc.setFillColor(7, 9, 15);
+  doc.rect(c1, y, B, 7, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.setTextColor(148, 163, 184);
+  doc.text("#", c1 + 2, y + 5);
+  doc.text("ITEM", c2 + 2, y + 5);
+  doc.text("DETAILS", c3 + 2, y + 5);
+  doc.text("AMOUNT", c4, y + 5, { align: "right" });
+  y += 8;
+  const ax = (extras || []).filter((e) => e.label && e.amount);
+  const trows = [
+    [
+      "1",
+      "Material",
+      safeStr(p.material) + " | " + costs.weight.toFixed(4) + " kg",
+      fmt(costs.material),
+    ],
+    [
+      "2",
+      "Machine",
+      safeStr(p.process) + " | " + costs.mhrs.toFixed(2) + " hrs",
+      fmt(costs.machine),
+    ],
+    ["3", "Labor", "Operator and supervision", fmt(costs.labor)],
+    ["4", "Setup", "Machine setup and tooling", fmt(costs.setup)],
+    [
+      "5",
+      "Finishing",
+      safeStr(p.finish) || "Surface treatment",
+      fmt(costs.finishing),
+    ],
+    ["6", "Packaging", "Protective packing", fmt(costs.packaging)],
+    [
+      "7",
+      "Transport",
+      "To " + safeStr(p.delivery || "destination"),
+      fmt(costs.transport),
+    ],
+    ...ax.map((e, i) => [
+      String(8 + i),
+      safeStr(e.label),
+      "Additional",
+      fmt(+e.amount / ccy.rate),
+    ]),
+    [
+      String(8 + ax.length),
+      "Profit",
+      "Margin " + (co.margin * 100).toFixed(0) + "%",
+      fmt(costs.profit),
+    ],
+  ];
+  trows.forEach((r, i) => {
+    need(8);
+    if (i % 2 === 0) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(c1, y - 1, B, 8, "F");
+    }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(r[0], c1 + 2, y + 5);
+    doc.text(r[1], c2 + 2, y + 5);
+    doc.setTextColor(100, 116, 139);
+    doc.setFontSize(7.5);
+    doc.text(safeStr(r[2]).substring(0, 44), c3 + 2, y + 5);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
+    doc.text(r[3], c4, y + 5, { align: "right" });
+    y += 8;
+  });
+  need(12);
+  doc.setFillColor(239, 246, 255);
+  doc.rect(c1, y, B, 11, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(29, 78, 216);
+  doc.text("TOTAL (" + ccy.code + ")", c1 + 4, y + 7.5);
+  doc.text(fmt(costs.total), c4, y + 7.5, { align: "right" });
+  y += 12;
+  need(7);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(
+    "Per part: " + fmt(costs.per_part) + " x " + p.quantity + " pcs",
+    c1 + 4,
+    y + 5,
+  );
+  y += 9;
+
+  /* FEASIBILITY */
+  if (feas && feas.warnings && feas.warnings.length > 0) {
+    const bh = 9 + feas.warnings.length * 6;
+    need(bh + 4);
+    doc.setFillColor(255, 251, 235);
+    doc.setDrawColor(253, 230, 138);
+    doc.roundedRect(M, y, B, bh, 2, 2, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(146, 64, 14);
+    doc.text(
+      "MANUFACTURING NOTES (Complexity: " + feas.complexity + ")",
+      M + 4,
+      y + 6,
+    );
+    y += 8;
+    feas.warnings.forEach((w) => {
+      const lines = doc.splitTextToSize("- " + safeStr(w.msg), B - 10);
+      lines.forEach((l) => {
+        need(6);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(120, 53, 15);
+        doc.text(l, M + 5, y + 4);
+        y += 5.5;
+      });
+    });
+    y += 4;
+  }
+
+  /* GANTT */
+  if (lt) {
+    sh("Production Schedule");
+    const tX = M + 52,
+      tW = B - 62,
+      eX = PW - M - 1;
+    lt.schedule.forEach((s) => {
+      need(9);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 41, 59);
+      doc.text(safeStr(s.label), M + 2, y + 5.5);
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text(s.days + "d", M + 40, y + 5.5);
+      doc.setFillColor(226, 232, 240);
+      doc.roundedRect(tX, y + 1, tW, 5.5, 1, 1, "F");
+      const { r, g, b } = h2rgb(s.color);
+      doc.setFillColor(r, g, b);
+      const bx = tX + ((s.start - 1) / lt.total) * tW;
+      const bw = Math.max((s.days / lt.total) * tW, 1.5);
+      doc.roundedRect(bx, y + 1.5, bw, 4.5, 0.5, 0.5, "F");
+      if (p.required_days && +p.required_days <= lt.total) {
+        const dlX = tX + (+p.required_days / lt.total) * tW;
+        doc.setDrawColor(245, 158, 11);
+        doc.setLineWidth(0.6);
+        doc.line(dlX, y + 1, dlX, y + 6.5);
+      }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(29, 78, 216);
+      doc.text(s.end + "d", eX, y + 5.5, { align: "right" });
+      y += 9;
+    });
+    need(11);
+    doc.setFillColor(239, 246, 255);
+    doc.roundedRect(M, y, B, 9, 2, 2, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Total Lead Time", M + 4, y + 6.5);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(29, 78, 216);
+    doc.text(lt.total + " Working Days", PW - M - 1, y + 6.5, {
+      align: "right",
+    });
+    y += 12;
+    if (p.required_days) {
+      need(9);
+      const ok = lt.total <= +p.required_days;
+      doc.setFillColor(...(ok ? [220, 252, 231] : [254, 226, 226]));
+      doc.roundedRect(M, y, B, 8, 2, 2, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...(ok ? [21, 128, 61] : [220, 38, 38]));
+      doc.text(
+        ok
+          ? "OK - Lead time (" +
+              lt.total +
+              "d) meets target (" +
+              p.required_days +
+              "d)"
+          : "LATE - Exceeds target by " + (lt.total - +p.required_days) + "d",
+        M + 4,
+        y + 5.5,
+      );
+      y += 11;
+    }
+  }
+
+  /* TERMS */
+  sh("Commercial Terms");
+  const tw = (B - 4) / 2;
+  const terms = [
+    ["Our Lead Time", lt ? lt.total + " working days" : "7-21 days"],
+    [
+      "Client Target",
+      p.required_days ? p.required_days + " days" : "Not specified",
+    ],
+    ["Quote Valid", "30 days from date"],
+    ["Payment", "50% advance, 50% delivery"],
+  ];
+  for (let i = 0; i < terms.length; i += 2) {
+    need(15);
+    [0, 1].forEach((j) => {
+      const t = terms[i + j];
+      if (!t) return;
+      const tx = M + j * (tw + 4);
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(tx, y, tw, 12, 2, 2, "F");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text(t[0].toUpperCase(), tx + 4, y + 5);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(30, 41, 59);
+      doc.text(safeStr(t[1]), tx + 4, y + 10.5);
+    });
+    y += 15;
+  }
+  need(12);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  const nl = doc.splitTextToSize(
+    "All prices exclude applicable taxes. Subject to final drawing approval. Lead time commences from receipt of advance payment and approved drawings.",
+    B,
+  );
+  doc.text(nl, M, y);
+  foot();
+  doc.save(qid + ".pdf");
+}
+
+function exportCSV(qid, p, costs, extras, lt, co, ccySrc) {
+  const c = costs,
+    cy = c.ccy;
+  const rows = [
+    ["Quotation", qid],
+    ["Date", new Date().toLocaleString()],
+    ["Company", co.name],
+    ["Currency", cy.code],
+    ["Rate Source", ccySrc],
+    ["", ""],
+    ["Client", p.client || ""],
+    ["Delivery", p.delivery || ""],
+    ["Required Days", p.required_days || ""],
+    ["Material", p.material || ""],
+    ["Thickness mm", p.thickness || ""],
+    ["Length mm", p.length || ""],
+    ["Width mm", p.width || ""],
+    ["Qty", p.quantity || ""],
+    ["Process", p.process || ""],
+    ["Finish", p.finish || ""],
+    ["", ""],
+    ["COSTS", cy.code],
+    ["Material", (c.material || 0).toFixed(2)],
+    ["Machine", (c.machine || 0).toFixed(2)],
+    ["Labor", (c.labor || 0).toFixed(2)],
+    ["Setup", (c.setup || 0).toFixed(2)],
+    ["Finishing", (c.finishing || 0).toFixed(2)],
+    ["Packaging", (c.packaging || 0).toFixed(2)],
+    ["Transport", (c.transport || 0).toFixed(2)],
+    ["Extra", (c.extra || 0).toFixed(2)],
+    ["Profit", (c.profit || 0).toFixed(2)],
+    ["TOTAL", (c.total || 0).toFixed(2)],
+    ["Per Part", (c.per_part || 0).toFixed(2)],
+    ...(lt
+      ? [
+          ["", ""],
+          ["Lead Time Days", lt.total],
+          ...lt.schedule.map((s) => [s.label, s.days + "d"]),
+        ]
+      : []),
+  ];
+  dlBlob(
+    rows.map((r) => r.map((v) => '"' + v + '"').join(",")).join("\n"),
+    "text/csv",
+    qid + ".csv",
+  );
+}
+
+function exportJSON(qid, p, costs, extras, lt, co, ccy, ccySrc) {
+  const { ccy: _a, mat: _b, proc: _c, ...cd } = costs;
+  dlBlob(
+    JSON.stringify(
+      {
+        quotation_id: qid,
+        generated: new Date().toISOString(),
+        company: co.name,
+        currency: ccy,
+        rate_source: ccySrc,
+        params: p,
+        costs: cd,
+        extras: (extras || []).filter((e) => e.label && e.amount),
+        lead_time: lt ? { total_days: lt.total, stages: lt.schedule } : null,
+      },
+      null,
+      2,
+    ),
+    "application/json",
+    qid + ".json",
+  );
+}
+
+function dlBlob(content, mime, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.download = name;
+  a.click();
+}
+
+/* ====================================
+   DESIGN TOKENS
+==================================== */
+const K = {
+  bg: "#07090f",
+  surf: "#0b0f1c",
+  card: "#0e1423",
+  bdr: "#182540",
+  txt: "#e4eaf5",
+  sub: "#4d6280",
+  dim: "#16243a",
+  blue: "#4f8fff",
+  grn: "#10b981",
+  yel: "#f59e0b",
+  red: "#ef4444",
+  pur: "#8b5cf6",
+  cyan: "#06b6d4",
+  ff: "'DM Sans',system-ui,sans-serif",
+  mono: "'DM Mono',monospace",
+};
+
+/* -- UI primitives -- */
+const Tag = ({ col, sm, children }) => {
+  const c = col || K.blue;
   return (
     <span
       style={{
-        ...sz,
-        fontWeight: 800,
-        letterSpacing: "1.5px",
-        textTransform: "uppercase",
-        background: `${color}18`,
-        color,
-        border: `1px solid ${color}35`,
-        borderRadius: 4,
-        fontFamily: T.display,
         display: "inline-flex",
         alignItems: "center",
+        padding: sm ? "2px 7px" : "3px 10px",
+        borderRadius: 99,
+        fontSize: sm ? 9.5 : 11,
+        fontWeight: 600,
+        background: c + "1a",
+        color: c,
+        border: "1px solid " + c + "30",
+        letterSpacing: 0.2,
+        whiteSpace: "nowrap",
       }}
     >
       {children}
     </span>
   );
-}
+};
 
-function Stat({ icon, label, value, color = T.accent, sub }) {
-  return (
-    <div
-      style={{
-        background: T.card,
-        border: `1px solid ${T.border}`,
-        borderRadius: 10,
-        padding: "14px 16px",
-      }}
-    >
-      <div style={{ fontSize: 20, marginBottom: 6 }}>{icon}</div>
-      <div
-        style={{
-          fontSize: 8,
-          color: T.textDim,
-          letterSpacing: "2px",
-          textTransform: "uppercase",
-          marginBottom: 4,
-          fontFamily: T.display,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 20,
-          fontWeight: 900,
-          color,
-          fontFamily: T.mono,
-          letterSpacing: "-0.5px",
-        }}
-      >
-        {value}
-      </div>
-      {sub && (
-        <div style={{ fontSize: 9, color: T.textMid, marginTop: 3 }}>{sub}</div>
-      )}
-    </div>
-  );
-}
+const Inp = ({ error, style, ...props }) => (
+  <input
+    className="ri"
+    {...props}
+    style={{
+      background: K.surf,
+      border: "1px solid " + (error ? K.red : K.bdr),
+      borderRadius: 8,
+      padding: "10px 13px",
+      color: K.txt,
+      fontSize: 13,
+      width: "100%",
+      boxSizing: "border-box",
+      fontFamily: K.ff,
+      outline: "none",
+      transition: "border-color .2s,box-shadow .2s",
+      ...(style || {}),
+    }}
+  />
+);
 
-function KV({ label, value, mono }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        fontSize: 12,
-        padding: "5px 0",
-        borderBottom: `1px solid ${T.textDim}20`,
-      }}
-    >
-      <span style={{ color: T.textMid }}>{label}</span>
-      <span
-        style={{
-          color: "#8facc8",
-          fontWeight: 700,
-          fontFamily: mono ? T.mono : T.body,
-        }}
-      >
-        {value || "—"}
-      </span>
-    </div>
-  );
-}
+const Sel = ({ children, style, ...props }) => (
+  <select
+    className="ri"
+    {...props}
+    style={{
+      background: K.surf,
+      border: "1px solid " + K.bdr,
+      borderRadius: 8,
+      padding: "10px 13px",
+      color: K.txt,
+      fontSize: 13,
+      width: "100%",
+      boxSizing: "border-box",
+      fontFamily: K.ff,
+      outline: "none",
+      cursor: "pointer",
+      ...(style || {}),
+    }}
+  >
+    {children}
+  </select>
+);
 
-function ProgressBar({ value, max, color }) {
-  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+const Btn = ({ children, v, sz, disabled, onClick, style }) => {
+  const variant = v || "primary";
+  const size = sz || "md";
+  const VS = {
+    primary: { background: K.blue, color: "#fff", border: "none" },
+    success: { background: "#059669", color: "#fff", border: "none" },
+    purple: { background: K.pur, color: "#fff", border: "none" },
+    danger: { background: K.red, color: "#fff", border: "none" },
+    outline: {
+      background: "transparent",
+      color: K.sub,
+      border: "1px solid " + K.bdr,
+    },
+    ghost: { background: "transparent", color: K.sub, border: "none" },
+  };
+  const SZ = {
+    sm: { padding: "6px 12px", fontSize: 12 },
+    md: { padding: "10px 17px", fontSize: 13 },
+    lg: { padding: "13px 24px", fontSize: 14 },
+  };
   return (
-    <div
+    <button
+      className="rb"
+      disabled={disabled}
+      onClick={disabled ? undefined : onClick}
       style={{
-        height: 6,
-        background: T.textDim + "40",
-        borderRadius: 3,
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          height: "100%",
-          background: color,
-          width: `${pct}%`,
-          borderRadius: 3,
-          transition: "width .5s ease",
-        }}
-      />
-    </div>
-  );
-}
-
-function SectionHead({ children, action }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
+        ...VS[variant],
+        ...SZ[size],
+        borderRadius: 9,
+        fontWeight: 700,
+        cursor: disabled ? "not-allowed" : "pointer",
+        fontFamily: K.ff,
+        display: "inline-flex",
         alignItems: "center",
-        marginBottom: 14,
+        gap: 7,
+        opacity: disabled ? 0.38 : 1,
+        whiteSpace: "nowrap",
+        ...(style || {}),
+      }}
+    >
+      {children}
+    </button>
+  );
+};
+
+const Card = ({ children, style }) => (
+  <div
+    style={{
+      background: K.card,
+      border: "1px solid " + K.bdr,
+      borderRadius: 14,
+      padding: 20,
+      marginBottom: 14,
+      ...(style || {}),
+    }}
+  >
+    {children}
+  </div>
+);
+
+const SH = ({ children }) => (
+  <div
+    style={{
+      fontSize: 9.5,
+      fontWeight: 700,
+      color: K.blue,
+      letterSpacing: 2,
+      textTransform: "uppercase",
+      marginBottom: 14,
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+    }}
+  >
+    {children}
+  </div>
+);
+
+const Fld = ({ label, hint, required, err, children }) => (
+  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+    <label
+      style={{
+        fontSize: 10.5,
+        fontWeight: 600,
+        color: err ? K.red : K.sub,
+        letterSpacing: 0.5,
+        textTransform: "uppercase",
+        display: "flex",
+        gap: 3,
+      }}
+    >
+      {label}
+      {required && <span style={{ color: K.red }}>*</span>}
+    </label>
+    {children}
+    {(hint || err) && (
+      <span
+        style={{ fontSize: 9.5, color: err ? K.red : K.dim, lineHeight: 1.5 }}
+      >
+        {err || hint}
+      </span>
+    )}
+  </div>
+);
+
+const KV = ({ label, value, mono }) => (
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      fontSize: 12,
+      padding: "5px 0",
+      borderBottom: "1px solid " + K.dim + "44",
+    }}
+  >
+    <span style={{ color: K.sub, flexShrink: 0 }}>{label}</span>
+    <span
+      style={{
+        color: "#64748b",
+        fontWeight: 600,
+        fontFamily: mono ? K.mono : K.ff,
+        textAlign: "right",
+        marginLeft: 8,
+        wordBreak: "break-word",
+      }}
+    >
+      {value}
+    </span>
+  </div>
+);
+
+const CcySel = ({ ccy, setCcy, ccyList, style }) => (
+  <Sel
+    value={ccy}
+    onChange={(e) => setCcy(e.target.value)}
+    style={{
+      width: "auto",
+      minWidth: 140,
+      fontSize: 12,
+      padding: "7px 10px",
+      ...(style || {}),
+    }}
+  >
+    {ccyList.map((c) => (
+      <option key={c.code} value={c.code}>
+        {c.sym} {c.code} - {c.name}
+      </option>
+    ))}
+  </Sel>
+);
+
+const StatCard = ({ label, value, sub, col, icon }) => {
+  const c = col || K.blue;
+  return (
+    <div
+      style={{
+        background: K.card,
+        border: "1px solid " + K.bdr,
+        borderRadius: 12,
+        padding: "14px 16px",
       }}
     >
       <div
         style={{
           fontSize: 9,
-          fontWeight: 800,
-          letterSpacing: "2.5px",
+          color: K.sub,
+          letterSpacing: 1,
           textTransform: "uppercase",
-          color: T.textDim,
-          fontFamily: T.display,
+          marginBottom: 5,
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: 4,
         }}
       >
-        <div style={{ width: 20, height: 2, background: T.accent }} />
-        {children}
+        {icon && <span>{icon}</span>}
+        <span>{label}</span>
       </div>
-      {action}
+      <div
+        style={{
+          fontSize: 21,
+          fontWeight: 800,
+          color: c,
+          fontFamily: K.mono,
+          lineHeight: 1,
+          wordBreak: "break-all",
+        }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div style={{ fontSize: 9, color: K.sub, marginTop: 4 }}>{sub}</div>
+      )}
     </div>
   );
-}
+};
 
-function Gantt({ schedule, total, clientDays }) {
+const GanttChart = ({ schedule, total, clientDays, sm }) => {
+  const CD = +clientDays || 0;
+  const over = CD > 0 && total > CD;
   return (
     <div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 9,
+          color: K.sub,
+          marginBottom: 10,
+          flexWrap: "wrap",
+          gap: 4,
+        }}
+      >
+        <span style={{ fontFamily: K.mono }}>Day 1</span>
+        <span style={{ fontWeight: 700, color: over ? K.red : K.grn }}>
+          {over
+            ? total + "d - " + (total - CD) + "d over target"
+            : total + " working days" + (CD ? " (target " + CD + "d)" : "")}
+        </span>
+        <span style={{ fontFamily: K.mono }}>Day {total}</span>
+      </div>
       {schedule.map((s, i) => (
         <div
           key={i}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 10,
-            marginBottom: 7,
+            gap: 8,
+            marginBottom: sm ? 4 : 6,
           }}
         >
-          <div style={{ width: 160, flexShrink: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>
+          <div style={{ width: sm ? 90 : 145, flexShrink: 0 }}>
+            <div
+              style={{
+                fontSize: sm ? 9 : 10,
+                fontWeight: 600,
+                color: "#94a3b8",
+                lineHeight: 1.3,
+              }}
+            >
               {s.label}
             </div>
-            <div style={{ fontSize: 9, color: T.textDim, fontFamily: T.mono }}>
-              D{s.start}–D{s.end}
-            </div>
+            <div style={{ fontSize: 8, color: K.sub }}>{s.days}d</div>
           </div>
           <div
             style={{
               flex: 1,
-              background: T.textDim + "40",
-              borderRadius: 3,
-              height: 18,
+              height: sm ? 16 : 20,
+              background: K.dim + "88",
+              borderRadius: 5,
               position: "relative",
               overflow: "hidden",
             }}
           >
+            {CD > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: Math.min((CD / total) * 100, 99) + "%",
+                  top: 0,
+                  bottom: 0,
+                  width: 2,
+                  background: K.yel,
+                  zIndex: 3,
+                }}
+              />
+            )}
             <div
               style={{
                 position: "absolute",
+                left: ((s.start - 1) / total) * 100 + "%",
+                width: (s.days / total) * 100 + "%",
                 top: 2,
                 bottom: 2,
-                left: `${((s.start - 1) / total) * 100}%`,
-                width: `${(s.days / total) * 100}%`,
                 background: s.color,
-                borderRadius: 2,
+                borderRadius: 3,
+                opacity: 0.88,
                 display: "flex",
                 alignItems: "center",
-                paddingLeft: 5,
-                fontSize: 9,
-                color: "#000",
-                fontWeight: 800,
-                fontFamily: T.mono,
+                fontSize: 7.5,
+                color: "#fff",
+                fontWeight: 700,
+                paddingLeft: 4,
+                overflow: "hidden",
+                whiteSpace: "nowrap",
               }}
             >
-              {s.days}d
+              {s.days / total > 0.12 ? s.start + "-" + s.end : ""}
             </div>
           </div>
           <div
             style={{
-              width: 30,
+              width: 22,
               textAlign: "right",
-              fontSize: 11,
-              fontWeight: 800,
-              color: T.accent,
-              fontFamily: T.mono,
+              fontSize: 9,
+              color: K.sub,
+              fontFamily: K.mono,
+              flexShrink: 0,
             }}
           >
-            {s.end}
+            {s.end}d
           </div>
         </div>
       ))}
+      {CD > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            marginTop: 8,
+            fontSize: 9,
+            color: K.sub,
+          }}
+        >
+          <div
+            style={{ width: 8, height: 8, background: K.yel, borderRadius: 2 }}
+          />
+          <span>Client deadline: Day {CD}</span>
+        </div>
+      )}
       <div
         style={{
-          marginTop: 8,
+          marginTop: 10,
+          padding: "10px 14px",
+          background: K.surf,
+          borderRadius: 9,
+          border: "1px solid " + K.bdr,
           display: "flex",
           justifyContent: "space-between",
-          fontSize: 11,
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 6,
         }}
       >
-        <span style={{ color: T.textMid }}>
-          Total: <b style={{ color: T.green }}>{total} working days</b>
+        <span style={{ fontSize: 11, color: K.sub }}>Total Lead Time</span>
+        <span
+          style={{
+            fontSize: 16,
+            fontWeight: 800,
+            color: K.blue,
+            fontFamily: K.mono,
+          }}
+        >
+          {total} Working Days
         </span>
-        {clientDays && (
-          <span
-            style={{
-              color: total <= +clientDays ? T.green : T.red,
-              fontWeight: 700,
-            }}
-          >
-            Client: {clientDays}d —{" "}
-            {total <= +clientDays ? "✅ On time" : "⚠ May miss"}
-          </span>
-        )}
       </div>
     </div>
   );
-}
+};
 
-// ════════════════════════════════════════════════════════════════════════════
-// BLANK STATE FACTORIES
-// ════════════════════════════════════════════════════════════════════════════
-const newPart = () => ({
-  id: Math.random().toString(36).slice(2),
-  partName: "",
-  drawingNo: "",
-  description: "",
-  material: "",
-  process: "",
-  thickness: "",
-  length: "",
-  width: "",
-  height: "",
-  diameter: "",
-  quantity: "",
-  finish: "",
-  tolerance: "",
-  hardness: "",
-  notes: "",
-  extracted_from_drawing: false,
-});
-
-const blankClient = () => ({
-  company: "",
-  name: "",
-  email: "",
-  phone: "",
-  address: "",
-  city: "",
-  state: "",
-  pincode: "",
-  country: "India",
-  gst: "",
-  pan: "",
-  required_days: "",
-  payment_terms: "50% Advance, Balance Before Dispatch",
-  incoterms: "Ex-Works",
-});
+const Donut = ({ slices }) => {
+  const COLS = ["#4f8fff", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444"];
+  const tot = slices.reduce((s, d) => s + (d.v || 0), 0) || 1;
+  let cum = 0;
+  const paths = slices.map((d, i) => {
+    const pct = (d.v || 0) / tot,
+      st = cum;
+    cum += pct;
+    const a1 = st * 2 * Math.PI - Math.PI / 2,
+      a2 = (st + pct) * 2 * Math.PI - Math.PI / 2;
+    const lf = pct > 0.5 ? 1 : 0;
+    const x1 = 80 + 55 * Math.cos(a1),
+      y1 = 80 + 55 * Math.sin(a1);
+    const x2 = 80 + 55 * Math.cos(a2),
+      y2 = 80 + 55 * Math.sin(a2);
+    return {
+      d:
+        "M80,80L" +
+        x1 +
+        "," +
+        y1 +
+        "A55,55,0," +
+        lf +
+        ",1," +
+        x2 +
+        "," +
+        y2 +
+        "Z",
+      color: COLS[i % 5],
+      label: d.label,
+      pct,
+    };
+  });
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 16,
+        alignItems: "center",
+        flexWrap: "wrap",
+      }}
+    >
+      <svg
+        viewBox="0 0 160 160"
+        style={{ width: 110, height: 110, flexShrink: 0 }}
+      >
+        {paths.map((p, i) => (
+          <path key={i} d={p.d} fill={p.color} opacity={0.9}>
+            <title>
+              {p.label}: {(p.pct * 100).toFixed(1)}%
+            </title>
+          </path>
+        ))}
+        <circle cx="80" cy="80" r="30" fill={K.card} />
+      </svg>
+      <div style={{ flex: 1, minWidth: 90 }}>
+        {paths.map((p, i) => (
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 11,
+              marginBottom: 5,
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                color: K.sub,
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 2,
+                  background: p.color,
+                  display: "inline-block",
+                  flexShrink: 0,
+                }}
+              />
+              {p.label}
+            </span>
+            <span
+              style={{ color: "#64748b", fontFamily: K.mono, fontSize: 10 }}
+            >
+              {(p.pct * 100).toFixed(0)}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const STEPS = [
-  { id: 1, icon: "⚙", label: "Setup" },
-  { id: 2, icon: "📄", label: "RFQ Upload" },
-  { id: 3, icon: "🏢", label: "Client" },
-  { id: 4, icon: "🔩", label: "Parts" },
-  { id: 5, icon: "💰", label: "Costing" },
-  { id: 6, icon: "📋", label: "Quotation" },
+  { id: 1, label: "Setup" },
+  { id: 2, label: "Input" },
+  { id: 3, label: "Review" },
+  { id: 4, label: "Costs" },
+  { id: 5, label: "Quote" },
 ];
 
-// ════════════════════════════════════════════════════════════════════════════
-// MAIN APPLICATION
-// ════════════════════════════════════════════════════════════════════════════
+const StepBar = ({ step, setStep, sm }) => (
+  <div
+    style={{
+      display: "flex",
+      background: K.surf,
+      borderBottom: "1px solid " + K.bdr,
+      flexShrink: 0,
+    }}
+  >
+    {STEPS.map((s) => {
+      const active = step === s.id,
+        done = step > s.id;
+      return (
+        <div
+          key={s.id}
+          onClick={() => done && setStep(s.id)}
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: sm ? "10px 4px" : "11px 8px",
+            gap: 2,
+            cursor: done ? "pointer" : "default",
+            borderBottom: "2px solid " + (active ? K.blue : "transparent"),
+            transition: "border-color .2s",
+            background: active ? K.blue + "0b" : "transparent",
+          }}
+        >
+          <div
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: done ? K.grn : active ? K.blue : K.dim,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#fff",
+              flexShrink: 0,
+            }}
+          >
+            {done ? "v" : s.id}
+          </div>
+          {!sm && (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 600,
+                color: done ? K.grn : active ? K.blue : K.sub,
+                letterSpacing: 0.5,
+                marginTop: 1,
+              }}
+            >
+              {s.label}
+            </span>
+          )}
+        </div>
+      );
+    })}
+  </div>
+);
+
+/* ====================================
+   MAIN APP
+==================================== */
 export default function App() {
+  const { sm, lg } = useBP();
+
+  /* -- State -- */
   const [step, setStep] = useState(1);
-  const [cos, setCos] = useState(COMPANIES.map((c) => ({ ...c })));
+  const [cos, setCos] = useState(INIT_COS.map((c) => ({ ...c })));
   const [coIdx, setCoIdx] = useState(0);
+  /* SINGLE currency state - one source of truth, used in all steps */
   const [ccy, setCcy] = useState("INR");
-  const [emailText, setEmailText] = useState("");
-  const [uploadedFiles, setUploadedFiles] = useState([]); // [{name,size,type,base64,mimeType}]
-  const [client, setClient] = useState(blankClient());
-  const [parts, setParts] = useState([newPart()]);
-  const [extras, setExtras] = useState(DEFAULT_EXTRAS.map((e) => ({ ...e })));
-  const [costsArr, setCostsArr] = useState([]);
-  const [ltArr, setLtArr] = useState([]);
-  const [overridesArr, setOvArr] = useState([]);
-  const [drawingInfo, setDrawingInfo] = useState(null);
-  const [orderNotes, setOrderNotes] = useState("");
+  const [ccyList, setCcyList] = useState(INIT_CCY);
+  const [ccySrc, setCcySrc] = useState("Built-in");
+
+  const [groqKey, setGroqKey] = useState(
+    () => sessionStorage.getItem("rfqa_gk") || "",
+  );
+  const [showKeyDlg, setShowKeyDlg] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+
+  const [email, setEmail] = useState("");
+  const [files, setFiles] = useState([]);
+  const [p, setP] = useState({
+    material: "",
+    thickness: "",
+    length: "",
+    width: "",
+    quantity: "",
+    process: "",
+    finish: "",
+    client: "",
+    delivery: "",
+    required_days: "",
+  });
+  const [extras, setExtras] = useState([{ label: "", amount: "" }]);
+  const [base, setBase] = useState(null);
+  const [ov, setOv] = useState({});
+  const [feas, setFeas] = useState(null);
+  const [lt, setLt] = useState(null);
   const [qid] = useState(genQID);
   const [busy, setBusy] = useState(false);
-  const [busyMsg, setBusyMsg] = useState("");
-  const [pdfBusy, setPdfBusy] = useState(false);
+  const [prog, setProg] = useState({ stage: "", pct: 0, msg: "" });
   const [toast, setToast] = useState(null);
-  const [activePartIdx, setActive] = useState(0);
+  const [aiSrc, setAiSrc] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [editRates, setEditRates] = useState(false);
-  const fileInputRef = useRef();
+  const fileRef = useRef();
 
   const co = cos[coIdx];
-  const curr = CURRENCIES.find((c) => c.code === ccy) || CURRENCIES[0];
+  const curr = ccyList.find((c) => c.code === ccy) || ccyList[0];
+  const activeExtras = extras.filter((e) => e.label && e.amount);
 
-  const showToast = (msg, type = "ok") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 4000);
-  };
+  /* Costs always derived from current ccy - changing currency auto-updates everything */
+  const displayCosts = base
+    ? applyOv(
+        calcCosts(p, co, ccy, activeExtras, ccyList),
+        Object.keys(ov).length ? ov : null,
+        p.quantity,
+      )
+    : null;
 
-  function setCoField(k, v) {
-    setCos((prev) => prev.map((c, i) => (i === coIdx ? { ...c, [k]: v } : c)));
-  }
-
-  function setPart(idx, k, v) {
-    setParts((prev) => prev.map((p, i) => (i === idx ? { ...p, [k]: v } : p)));
-  }
-
-  function addPart() {
-    setParts((prev) => [...prev, newPart()]);
-    setActive(parts.length);
-  }
-
-  function removePart(idx) {
-    if (parts.length === 1) return;
-    setParts((prev) => prev.filter((_, i) => i !== idx));
-    setCostsArr((prev) => prev.filter((_, i) => i !== idx));
-    setLtArr((prev) => prev.filter((_, i) => i !== idx));
-    setOvArr((prev) => prev.filter((_, i) => i !== idx));
-    setActive(Math.max(0, idx - 1));
-  }
-
-  function dupPart(idx) {
-    const clone = { ...parts[idx], id: Math.random().toString(36).slice(2) };
-    const arr = [...parts];
-    arr.splice(idx + 1, 0, clone);
-    setParts(arr);
-    setActive(idx + 1);
-  }
-
-  // File upload handling
-  const handleFiles = useCallback((fileList) => {
-    Array.from(fileList).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const base64 = e.target.result.split(",")[1];
-        const mimeType =
-          file.type ||
-          (file.name.endsWith(".pdf") ? "application/pdf" : "image/png");
-        setUploadedFiles((prev) => [
-          ...prev,
-          {
-            name: file.name,
-            size: (file.size / 1024).toFixed(1) + " KB",
-            type: file.name.split(".").pop().toUpperCase(),
-            base64,
-            mimeType,
-          },
-        ]);
-      };
-      reader.readAsDataURL(file);
-    });
+  /* Live exchange rates on mount */
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(
+          "https://api.frankfurter.app/latest?from=INR&to=USD,EUR,GBP,AED,SGD,JPY,CNY,SAR,MYR",
+        );
+        if (r.ok) {
+          const d = await r.json();
+          if (d && d.rates) {
+            setCcyList((prev) =>
+              prev.map((c) => {
+                if (c.code === "INR") return c;
+                const lr = d.rates[c.code];
+                return lr ? { ...c, rate: 1 / lr } : c;
+              }),
+            );
+            setCcySrc("Live");
+          }
+        }
+      } catch (_) {}
+    })();
   }, []);
 
-  // AI Extract from email text
-  async function extractFromEmailText() {
-    if (!emailText.trim()) {
-      showToast("Paste email text first", "err");
+  const showToast = useCallback((msg, type, ms) => {
+    setToast({ msg, type: type || "ok" });
+    setTimeout(() => setToast(null), ms || 4500);
+  }, []);
+
+  const handleFiles = useCallback((incoming) => {
+    const items = Array.from(incoming)
+      .filter((f) => f.type.startsWith("image/"))
+      .map((f) => ({
+        file: f,
+        name: f.name,
+        url: URL.createObjectURL(f),
+        type: f.type,
+      }));
+    setFiles((prev) => [...prev, ...items].slice(0, 6));
+  }, []);
+
+  function run() {
+    const c = calcCosts(p, co, ccy, activeExtras, ccyList);
+    setBase(c);
+    setFeas(calcFeas(p));
+    setLt(calcLT(p, c.mhrs));
+    setOv({});
+    setStep(4);
+  }
+
+  async function doAI() {
+    if (!email.trim() && files.length === 0) {
+      showToast("Paste an email or upload drawings first.", "err");
       return;
     }
     setBusy(true);
-    setBusyMsg("AI reading email...");
+    const onProg = (stage, pct, msg) => setProg({ stage, pct, msg });
     try {
-      const result = await extractFromText(emailText);
-      if (result.client) setClient((prev) => ({ ...prev, ...result.client }));
-      if (result.parts?.length) {
-        setParts(result.parts.map((p) => ({ ...newPart(), ...p })));
-        setActive(0);
-      }
-      if (result.order_notes) setOrderNotes(result.order_notes);
-      showToast(
-        `✅ AI extracted ${result.parts?.length || 0} part(s) and client details`,
-        "ok",
+      const imgFiles = files.map((f) => f.file);
+      const { data, src } = await aiExtract(email, imgFiles, groqKey, onProg);
+      const cleaned = Object.fromEntries(
+        Object.entries(data).map(([k, v]) => [
+          k,
+          v === null || v === undefined
+            ? ""
+            : String(
+                v === 0 &&
+                  ["thickness", "length", "width", "quantity"].includes(k)
+                  ? ""
+                  : v,
+              ),
+        ]),
       );
+      setP((prev) => ({ ...prev, ...cleaned }));
+      setAiSrc(src);
+      showToast("Extracted via: " + src, "ok");
       setStep(3);
     } catch (e) {
-      showToast("⚠ AI unavailable — enter details manually", "warn");
-      setStep(3);
+      showToast("Extraction error: " + e.message, "err");
     } finally {
       setBusy(false);
-      setBusyMsg("");
+      setProg({ stage: "", pct: 0, msg: "" });
     }
   }
 
-  // AI Extract from PDF/drawing
-  async function extractFromFile(fileObj) {
-    setBusy(true);
-    setBusyMsg(`AI analysing ${fileObj.name}...`);
-    try {
-      const isPDF = fileObj.mimeType === "application/pdf";
-      const isImg = fileObj.mimeType.startsWith("image/");
-      if (!isPDF && !isImg) {
-        showToast("AI extraction supports PDF and image files", "warn");
-        setBusy(false);
-        return;
-      }
-      const result = await extractFromPDF(fileObj.base64, fileObj.mimeType);
-      if (result.client) setClient((prev) => ({ ...prev, ...result.client }));
-      if (result.parts?.length) {
-        setParts((prev) => {
-          const existing = prev.filter(
-            (p) => p.partName || p.material || p.quantity,
-          );
-          const newParts = result.parts.map((p) => ({ ...newPart(), ...p }));
-          return existing.length ? [...existing, ...newParts] : newParts;
-        });
-        setActive(0);
-      }
-      if (result.drawing_info) setDrawingInfo(result.drawing_info);
-      if (result.order_notes) setOrderNotes(result.order_notes);
-      showToast(
-        `✅ Extracted from ${fileObj.name} — ${result.parts?.length || 0} part(s) found${result.drawing_info?.has_drawing ? " · Drawing analysed" : ""}`,
-        "ok",
-      );
-    } catch (e) {
-      showToast(`Failed to extract from ${fileObj.name}`, "err");
-    } finally {
-      setBusy(false);
-      setBusyMsg("");
+  function doRegex() {
+    if (!email.trim()) {
+      showToast("Paste email text first.", "err");
+      return;
     }
+    setP((prev) => ({ ...prev, ...regexParse(email) }));
+    setAiSrc("Smart Rules");
+    showToast("Smart rules extraction done.", "ok");
+    setStep(3);
   }
 
-  // Calculate all costs
-  function runAll() {
-    const newCosts = [],
-      newLt = [];
-    parts.forEach((p) => {
-      const c = calcCosts(p, co, ccy);
-      const l = calcLeadTime(p, c.mhrs);
-      newCosts.push(c);
-      newLt.push(l);
-    });
-    setCostsArr(newCosts);
-    setLtArr(newLt);
-    setOvArr(parts.map(() => ({})));
-    setStep(5);
-    showToast(`✅ Costs calculated for ${parts.length} part(s)`, "ok");
-  }
-
-  function displayCost(idx) {
-    const base = costsArr[idx];
-    if (!base) return null;
-    const ov = overridesArr[idx] || {};
-    if (!Object.keys(ov).length) return base;
-    const m = { ...base, ...ov };
-    m.total =
-      (m.material +
-        m.machine +
-        m.labor +
-        m.setup +
-        m.finishing +
-        m.packaging +
-        m.transport +
-        m.profit) *
-      (+parts[idx]?.quantity || 1);
-    m.per_part =
-      m.material +
-      m.machine +
-      m.labor +
-      m.setup +
-      m.finishing +
-      m.packaging +
-      m.transport +
-      m.profit;
-    return m;
-  }
-
-  function setOv(partIdx, k, v) {
-    setOvArr((prev) =>
-      prev.map((o, i) => (i === partIdx ? { ...o, [k]: v } : o)),
-    );
-  }
-
-  // Extras computation
-  const partSubtotal = costsArr.reduce(
-    (_, __, i) => _ + (displayCost(i)?.total || 0),
-    0,
-  );
-  const { rows: extraRows, total: extraTotal } = calcExtrasTotal(
-    extras,
-    partSubtotal,
-    ccy,
-  );
-  const grandTotal = partSubtotal + extraTotal;
-
-  // PDF download
-  async function downloadPDF() {
-    const allCosts = parts.map((_, i) => displayCost(i));
-    const html = buildQuotationHTML({
-      qid,
-      client,
-      parts,
-      costsArr: allCosts,
-      extraRows,
-      extraTotal,
-      grandTotal,
-      co,
-      currency: ccy,
-      ltArr,
-      drawingInfo,
-    });
+  async function doPDF() {
+    if (!displayCosts) return;
     setPdfBusy(true);
     try {
-      const el = document.createElement("div");
-      el.innerHTML = html;
-      el.style.cssText = "position:absolute;left:-9999px;top:0;z-index:-1";
-      document.body.appendChild(el);
-      await (window.html2pdf ? html2pdf() : null)
-        ?.set({
-          margin: 0,
-          filename: `${qid}.pdf`,
-          image: { type: "jpeg", quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, logging: false },
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          pagebreak: { mode: ["avoid-all", "css", "legacy"] },
-        })
-        .from(el.querySelector(".page"))
-        .save();
-      document.body.removeChild(el);
-      showToast("📥 PDF downloaded successfully", "ok");
+      await exportPDF(qid, p, displayCosts, feas, co, activeExtras, lt);
     } catch (e) {
-      // fallback
-      const w = window.open("", "_blank");
-      w.document.write(html);
-      w.document.close();
-      setTimeout(() => w.print(), 800);
+      showToast("PDF error: " + e.message, "err");
     } finally {
       setPdfBusy(false);
     }
   }
 
-  function resetAll() {
+  function reset() {
     setStep(1);
-    setCostsArr([]);
-    setLtArr([]);
-    setOvArr([]);
-    setEmailText("");
-    setUploadedFiles([]);
-    setClient(blankClient());
-    setParts([newPart()]);
-    setExtras(DEFAULT_EXTRAS.map((e) => ({ ...e })));
-    setDrawingInfo(null);
-    setOrderNotes("");
-    setActive(0);
-    showToast("🔄 New RFQ started", "ok");
+    setBase(null);
+    setFeas(null);
+    setLt(null);
+    setOv({});
+    setEmail("");
+    setFiles([]);
+    setAiSrc("");
+    setToast(null);
+    setP({
+      material: "",
+      thickness: "",
+      length: "",
+      width: "",
+      quantity: "",
+      process: "",
+      finish: "",
+      client: "",
+      delivery: "",
+      required_days: "",
+    });
+    setExtras([{ label: "", amount: "" }]);
   }
 
-  const reqFields = [
+  function setCoF(k, v) {
+    setCos((prev) => prev.map((c, i) => (i === coIdx ? { ...c, [k]: v } : c)));
+  }
+
+  function saveKey() {
+    const k = keyInput.trim();
+    if (k.startsWith("gsk_")) {
+      sessionStorage.setItem("rfqa_gk", k);
+      setGroqKey(k);
+      showToast("Groq key saved - Llama 3.3 active", "ok");
+    } else if (k === "") {
+      sessionStorage.removeItem("rfqa_gk");
+      setGroqKey("");
+    }
+    setShowKeyDlg(false);
+    setKeyInput("");
+  }
+
+  const REQ = [
     "material",
     "thickness",
     "length",
@@ -1806,278 +1974,422 @@ export default function App() {
     "quantity",
     "process",
   ];
-  const partValid = (p) => reqFields.every((k) => p[k]);
-  const allValid = parts.every(partValid);
+  const missing = REQ.filter((k) => !p[k]);
+  const valid = missing.length === 0;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
+  const CROW = base
+    ? [
+        {
+          k: "material",
+          label: "Material",
+          det: p.material + " - " + base.weight.toFixed(4) + " kg",
+        },
+        {
+          k: "machine",
+          label: "Machine",
+          det: p.process + " - " + base.mhrs.toFixed(2) + " hrs",
+        },
+        { k: "labor", label: "Labor", det: "Operator & supervision" },
+        { k: "setup", label: "Setup", det: "Machine setup & tooling" },
+        {
+          k: "finishing",
+          label: "Finishing",
+          det: p.finish || "Surface treatment",
+        },
+        { k: "packaging", label: "Packaging", det: "Protective packing" },
+        {
+          k: "transport",
+          label: "Transport",
+          det: "To " + (p.delivery || "destination"),
+        },
+        ...(base.extra > 0
+          ? [{ k: "extra", label: "Additional", det: "Extra charges" }]
+          : []),
+        {
+          k: "profit",
+          label: "Profit " + (co.margin * 100).toFixed(0) + "%",
+          det: "Overhead & margin",
+        },
+      ]
+    : [];
+
+  const BCOLS = [
+    "#4f8fff",
+    "#8b5cf6",
+    "#10b981",
+    "#f59e0b",
+    "#ef4444",
+    "#06b6d4",
+    "#ec4899",
+    "#84cc16",
+    "#f97316",
+  ];
+  const pad = sm ? "12px" : "20px 28px";
+  const fmtAmt = (v) =>
+    curr.sym +
+    Number(v || 0).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
   return (
-    <div style={S.app}>
-      {/* TOAST */}
-      {toast && (
-        <div
-          style={{
-            position: "fixed",
-            top: 16,
-            right: 16,
-            zIndex: 999,
-            background:
-              toast.type === "ok"
-                ? T.green
-                : toast.type === "err"
-                  ? T.red
-                  : T.amber,
-            color: "#000",
-            padding: "10px 18px",
-            borderRadius: 8,
-            fontSize: 12,
-            fontWeight: 800,
-            fontFamily: T.display,
-            letterSpacing: "0.5px",
-            boxShadow: "0 8px 32px rgba(0,0,0,.5)",
-            animation: "slideIn .2s ease",
-          }}
-        >
-          {toast.msg}
-        </div>
-      )}
-
-      {/* AI BUSY OVERLAY */}
-      {busy && (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: K.bg,
+        color: K.txt,
+        fontFamily: K.ff,
+        display: "flex",
+        flexDirection: "column",
+        fontSize: 14,
+        lineHeight: 1.55,
+      }}
+    >
+      {/* -- Groq API Key Dialog -- */}
+      {showKeyDlg && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(3,8,15,.85)",
-            zIndex: 500,
+            background: "rgba(7,9,15,.94)",
+            zIndex: 1000,
             display: "flex",
-            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            backdropFilter: "blur(4px)",
+            padding: 20,
           }}
         >
           <div
             style={{
-              fontFamily: T.display,
-              fontSize: 48,
-              fontWeight: 900,
-              color: T.accent,
-              letterSpacing: "-2px",
-              marginBottom: 16,
+              background: K.card,
+              border: "1px solid " + K.bdr,
+              borderRadius: 16,
+              padding: 30,
+              maxWidth: 460,
+              width: "100%",
+              boxShadow: "0 24px 80px rgba(0,0,0,.5)",
             }}
           >
-            RFQ<span style={{ color: T.text }}>AI</span>
-          </div>
-          <div style={{ fontSize: 14, color: T.textMid, marginBottom: 24 }}>
-            {busyMsg}
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            {[0, 1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                style={{
-                  width: 8,
-                  height: 8,
-                  background: T.accent,
-                  borderRadius: "50%",
-                  animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
+            <div style={{ fontSize: 28, marginBottom: 8 }}>Llama</div>
+            <h2
+              style={{
+                fontSize: 19,
+                fontWeight: 800,
+                color: K.txt,
+                marginBottom: 6,
+              }}
+            >
+              Groq API Key - Free Llama 3.3
+            </h2>
+            <p
+              style={{
+                fontSize: 12.5,
+                color: K.sub,
+                marginBottom: 16,
+                lineHeight: 1.75,
+              }}
+            >
+              Get a free key at{" "}
+              <a
+                href="https://console.groq.com"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: K.blue }}
+              >
+                console.groq.com
+              </a>{" "}
+              (30 sec, no credit card). Unlocks{" "}
+              <b style={{ color: K.pur }}>Llama 3.3 70B</b> for highly accurate
+              extraction from emails and drawings.
+            </p>
+            <div
+              style={{
+                background: K.surf,
+                border: "1px solid " + K.bdr,
+                borderRadius: 9,
+                padding: 12,
+                marginBottom: 14,
+                fontSize: 11,
+                color: K.sub,
+                lineHeight: 1.8,
+              }}
+            >
+              Free tier:{" "}
+              <b style={{ color: K.txt }}>
+                30 req/min - Llama-3.3-70b-versatile
+              </b>
+              <br />
+              Key format:{" "}
+              <code style={{ color: K.blue, fontFamily: K.mono }}>gsk_...</code>
+            </div>
+            <Inp
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              style={{ fontFamily: K.mono, fontSize: 12, marginBottom: 12 }}
+            />
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <Btn
+                v="primary"
+                onClick={saveKey}
+                disabled={
+                  keyInput.trim().length > 0 &&
+                  !keyInput.trim().startsWith("gsk_")
+                }
+              >
+                Save Key
+              </Btn>
+              <Btn
+                v="outline"
+                onClick={() => {
+                  setShowKeyDlg(false);
+                  setKeyInput("");
                 }}
-              />
-            ))}
+              >
+                Cancel
+              </Btn>
+              {groqKey && (
+                <Btn
+                  v="ghost"
+                  onClick={() => {
+                    sessionStorage.removeItem("rfqa_gk");
+                    setGroqKey("");
+                    setShowKeyDlg(false);
+                    showToast("Key removed", "ok");
+                  }}
+                  style={{ color: K.red }}
+                >
+                  Remove
+                </Btn>
+              )}
+            </div>
+            <p style={{ marginTop: 12, fontSize: 9.5, color: K.dim }}>
+              Key stored in browser session only. Only sent to api.groq.com.
+            </p>
           </div>
-          <style>{`@keyframes pulse{0%,80%,100%{transform:scale(0);opacity:.5}40%{transform:scale(1);opacity:1}}`}</style>
         </div>
       )}
 
-      {/* TOP BAR */}
-      <div style={S.topbar}>
-        <div style={S.logo}>
+      {/* -- Toast -- */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 999,
+            padding: "12px 18px",
+            background: toast.type === "err" ? K.red : "#059669",
+            color: "#fff",
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 600,
+            boxShadow: "0 8px 32px rgba(0,0,0,.45)",
+            maxWidth: 380,
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <span>{toast.type === "err" ? "X" : "v"}</span>
+          <span>{toast.msg}</span>
+        </div>
+      )}
+
+      {/* -- Top Nav -- */}
+      <div
+        style={{
+          background: K.surf,
+          borderBottom: "1px solid " + K.bdr,
+          padding: "0 " + (sm ? 12 : 24) + "px",
+          height: 54,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexShrink: 0,
+          gap: 8,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div
             style={{
-              width: 28,
-              height: 28,
-              background: `linear-gradient(135deg,${T.accent},${T.accent2})`,
-              borderRadius: 6,
+              width: 32,
+              height: 32,
+              background: "linear-gradient(135deg,#4f8fff,#8b5cf6)",
+              borderRadius: 9,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 14,
+              fontSize: 15,
+              fontWeight: 800,
+              color: "#fff",
+              flexShrink: 0,
             }}
           >
-            ⚙
+            R
           </div>
-          <span>
-            RFQ<span style={{ color: T.accent }}>Analyzer</span>
-          </span>
-          <Tag color={T.accent} size="md">
-            PRO
-          </Tag>
-          <Tag color={T.green} size="md">
-            AI
-          </Tag>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          {grandTotal > 0 && (
+          <div>
             <div
               style={{
-                fontFamily: T.mono,
-                fontSize: 14,
-                color: T.accent,
-                fontWeight: 700,
+                fontWeight: 800,
+                fontSize: sm ? 14 : 16,
+                color: K.txt,
+                letterSpacing: -0.3,
               }}
             >
-              {curr.sym}
-              {grandTotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+              RFQ<span style={{ color: K.blue }}>Analyzer</span>
             </div>
-          )}
-          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.textDim }}>
-            {qid}
+            {!sm && (
+              <div
+                style={{
+                  fontSize: 9,
+                  color: K.sub,
+                  marginTop: -2,
+                  letterSpacing: 0.5,
+                }}
+              >
+                AI Fabrication Quotation
+              </div>
+            )}
           </div>
-          <button
-            style={{ ...S.btnGhost, fontSize: 10, padding: "6px 12px" }}
-            onClick={resetAll}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+          }}
+        >
+          {/* SINGLE GLOBAL CURRENCY SELECTOR - drives all values everywhere */}
+          <CcySel ccy={ccy} setCcy={setCcy} ccyList={ccyList} />
+          <Tag col={ccySrc === "Live" ? K.grn : K.yel} sm>
+            {ccySrc === "Live" ? "Live" : "Rates"}
+          </Tag>
+          {displayCosts && !sm && (
+            <Tag col={K.blue} sm>
+              {curr.sym}
+              {Math.round(displayCosts.total).toLocaleString()} {ccy}
+            </Tag>
+          )}
+          <Btn
+            v="outline"
+            sz="sm"
+            onClick={() => {
+              setKeyInput(groqKey);
+              setShowKeyDlg(true);
+            }}
           >
-            NEW RFQ
-          </button>
+            {groqKey ? "Key Active" : "Add Key"}
+          </Btn>
         </div>
       </div>
 
-      <div style={S.layout}>
-        {/* SIDEBAR */}
-        <div style={S.sidebar}>
-          <div style={S.navGrp}>Workflow</div>
-          {STEPS.map((s) => (
+      <StepBar step={step} setStep={setStep} sm={sm} />
+
+      {/* -- Page Content -- */}
+      <div
+        className="fade"
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: pad,
+          maxWidth: 1380,
+          width: "100%",
+          margin: "0 auto",
+          boxSizing: "border-box",
+        }}
+      >
+        {/* ==== STEP 1: SETUP ==== */}
+        {step === 1 && (
+          <>
+            <div style={{ marginBottom: 20 }}>
+              <h1
+                style={{
+                  fontSize: sm ? 19 : 26,
+                  fontWeight: 800,
+                  color: K.txt,
+                  marginBottom: 4,
+                  letterSpacing: -0.4,
+                }}
+              >
+                Company Setup
+              </h1>
+              <p style={{ fontSize: 12.5, color: K.sub }}>
+                Configure your company and machine rates. The currency selector
+                in the top bar updates all values across every step.
+              </p>
+            </div>
+
+            {/* Llama key callout */}
             <div
-              key={s.id}
-              style={S.nav(step === s.id)}
-              onClick={() => step >= s.id && setStep(s.id)}
+              style={{
+                padding: "16px 20px",
+                background:
+                  "linear-gradient(135deg," + K.pur + "14," + K.blue + "0a)",
+                border: "1px solid " + K.pur + "28",
+                borderRadius: 14,
+                marginBottom: 16,
+                display: "flex",
+                alignItems: sm ? "flex-start" : "center",
+                gap: 14,
+                flexWrap: "wrap",
+              }}
             >
-              <span
-                style={{
-                  fontSize: 14,
-                  width: 20,
-                  textAlign: "center",
-                  flexShrink: 0,
-                  fontFamily: T.mono,
-                }}
-              >
-                {s.icon}
-              </span>
-              <div>
-                <div>{s.label}</div>
-                {step > s.id && (
-                  <div
-                    style={{
-                      fontSize: 8,
-                      color: T.green,
-                      marginTop: 1,
-                      letterSpacing: "1px",
-                    }}
-                  >
-                    COMPLETE
-                  </div>
-                )}
-                {step === s.id && (
-                  <div
-                    style={{
-                      fontSize: 8,
-                      color: T.accent,
-                      marginTop: 1,
-                      letterSpacing: "1px",
-                    }}
-                  >
-                    ACTIVE
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          <div style={S.hr} />
-          <div style={{ padding: "0 14px" }}>
-            <div style={S.navGrp}>Session</div>
-            <div style={{ fontSize: 11, color: T.textMid, lineHeight: 2.3 }}>
-              <div>
-                Company:{" "}
-                <b style={{ color: "#64748b" }}>{co.name.split(" ")[0]}</b>
-              </div>
-              <div>
-                Currency:{" "}
-                <b style={{ color: "#64748b" }}>
-                  {curr.flag} {ccy}
-                </b>
-              </div>
-              <div>
-                Parts: <b style={{ color: "#64748b" }}>{parts.length}</b>
-              </div>
-              {costsArr.length > 0 && (
-                <div>
-                  Total:{" "}
-                  <b style={{ color: T.accent, fontFamily: T.mono }}>
-                    {curr.sym}
-                    {grandTotal.toLocaleString("en-IN", {
-                      maximumFractionDigits: 0,
-                    })}
-                  </b>
-                </div>
-              )}
-              {drawingInfo?.has_drawing && (
-                <div>
-                  Drawing: <b style={{ color: T.green }}>✓ Analysed</b>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {costsArr.length > 0 && (
-            <div style={{ padding: "10px 10px 0" }}>
-              <button
-                style={{
-                  ...S.btn,
-                  width: "100%",
-                  fontSize: 10,
-                  padding: "9px",
-                }}
-                onClick={() => setStep(6)}
-              >
-                📋 QUOTATION
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* ── MAIN CONTENT ─────────────────────────────────────────────────── */}
-        <div style={S.main}>
-          {/* ════════ STEP 1: SETUP ════════ */}
-          {step === 1 && (
-            <div>
-              <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 28 }}>AI</div>
+              <div style={{ flex: 1 }}>
                 <div
                   style={{
-                    fontFamily: T.display,
-                    fontSize: 34,
-                    fontWeight: 900,
-                    letterSpacing: "-1px",
-                    color: T.text,
-                    lineHeight: 1,
+                    fontWeight: 700,
+                    color: K.txt,
+                    marginBottom: 3,
+                    fontSize: 14,
                   }}
                 >
-                  COMPANY<span style={{ color: T.accent }}> SETUP</span>
+                  Llama 3.3 70B - Free, No Credit Card
                 </div>
-                <div style={{ fontSize: 12, color: T.textMid, marginTop: 6 }}>
-                  Configure your company profile, machine rates and default
-                  quotation settings.
+                <div style={{ fontSize: 11.5, color: K.sub, lineHeight: 1.75 }}>
+                  Get your free Groq key at{" "}
+                  <a
+                    href="https://console.groq.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: K.blue }}
+                  >
+                    console.groq.com
+                  </a>{" "}
+                  (30 sec). Powers accurate extraction from emails and
+                  engineering drawings via Tesseract OCR. Falls back to smart
+                  rules if no key.
                 </div>
               </div>
+              <Btn
+                v="purple"
+                sz="sm"
+                onClick={() => {
+                  setKeyInput(groqKey);
+                  setShowKeyDlg(true);
+                }}
+              >
+                {groqKey ? "Key Active - Update" : "Set Free API Key"}
+              </Btn>
+            </div>
 
-              <div style={S.card}>
-                <SectionHead>Profile & Currency</SectionHead>
-                <div style={S.g2}>
-                  <Field label="Company">
-                    <select
-                      style={S.sel}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: sm ? "1fr" : lg ? "1fr 1fr" : "1fr 1fr",
+                gap: 14,
+              }}
+            >
+              <Card>
+                <SH>Company Profile</SH>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                >
+                  <Fld label="Select Company">
+                    <Sel
                       value={coIdx}
                       onChange={(e) => setCoIdx(+e.target.value)}
                     >
@@ -2086,2671 +2398,1953 @@ export default function App() {
                           {c.name}
                         </option>
                       ))}
-                    </select>
-                  </Field>
-                  <Field label="Quotation Currency">
-                    <select
-                      style={S.sel}
-                      value={ccy}
-                      onChange={(e) => setCcy(e.target.value)}
-                    >
-                      {CURRENCIES.map((c) => (
-                        <option key={c.code} value={c.code}>
-                          {c.flag} {c.code} — {c.sym}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </div>
-                <div style={{ ...S.g2, marginTop: 12 }}>
-                  <Field label="Company Address">
-                    <input
-                      style={S.inp}
-                      value={co.addr}
-                      onChange={(e) => setCoField("addr", e.target.value)}
-                      placeholder="City, State"
-                    />
-                  </Field>
-                  <Field label="Phone">
-                    <input
-                      style={S.inp}
-                      value={co.phone}
-                      onChange={(e) => setCoField("phone", e.target.value)}
-                      placeholder="+91 ..."
-                    />
-                  </Field>
-                  <Field label="GSTIN">
-                    <input
-                      style={S.inp}
-                      value={co.gst}
-                      onChange={(e) =>
-                        setCoField("gst", e.target.value.toUpperCase())
-                      }
-                      placeholder="29ABCDE1234F1Z5"
-                      maxLength={15}
-                    />
-                  </Field>
-                  <div />
-                </div>
-              </div>
-
-              <div style={S.card}>
-                <SectionHead
-                  action={
-                    <button
-                      style={{
-                        ...S.btnGhost,
-                        fontSize: 9,
-                        padding: "5px 12px",
-                      }}
-                      onClick={() => setEditRates((v) => !v)}
-                    >
-                      {editRates ? "✓ SAVE" : "✏ EDIT RATES"}
-                    </button>
-                  }
-                >
-                  Machine & Labor Rates (₹/hr)
-                </SectionHead>
-                <div style={S.g3}>
-                  {[
-                    { k: "laser", l: "Laser Cutting", c: T.accent },
-                    { k: "cnc", l: "CNC Machining", c: T.accent2 },
-                    { k: "bending", l: "Bending", c: T.green },
-                    { k: "welding", l: "Welding", c: T.amber },
-                    { k: "grinding", l: "Grinding", c: T.pink },
-                    { k: "labor", l: "Labour / hr", c: "#60a5fa" },
-                  ].map(({ k, l, c }) => (
-                    <div
-                      key={k}
-                      style={{
-                        background: T.surface,
-                        border: `1px solid ${T.border}`,
-                        borderRadius: 8,
-                        padding: "12px 14px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 9,
-                          color: T.textDim,
-                          marginBottom: 5,
-                          letterSpacing: "1px",
-                          textTransform: "uppercase",
-                          fontFamily: T.display,
-                        }}
-                      >
-                        {l}
-                      </div>
-                      {editRates ? (
-                        <input
-                          style={{
-                            ...S.inp,
-                            fontSize: 20,
-                            fontWeight: 900,
-                            color: c,
-                            background: "transparent",
-                            border: "none",
-                            borderBottom: `1px solid ${c}`,
-                            borderRadius: 0,
-                            padding: "2px 0",
-                            fontFamily: T.mono,
-                          }}
-                          type="number"
-                          value={co[k]}
-                          onChange={(e) => setCoField(k, +e.target.value)}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            fontSize: 22,
-                            fontWeight: 900,
-                            color: c,
-                            fontFamily: T.mono,
-                          }}
-                        >
-                          ₹{co[k]}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ ...S.g4, marginTop: 12 }}>
-                  {[
-                    { k: "finishing", l: "Finish ₹/pc" },
-                    { k: "packaging", l: "Packaging ₹" },
-                    { k: "transport", l: "Transport ₹" },
-                    { k: "margin", l: "Profit %", pct: true },
-                  ].map(({ k, l, pct }) => (
-                    <div
-                      key={k}
-                      style={{
-                        background: T.surface,
-                        border: `1px solid ${T.border}`,
-                        borderRadius: 8,
-                        padding: "12px 14px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 9,
-                          color: T.textDim,
-                          marginBottom: 5,
-                          letterSpacing: "1px",
-                          textTransform: "uppercase",
-                          fontFamily: T.display,
-                        }}
-                      >
-                        {l}
-                      </div>
-                      {editRates ? (
-                        <input
-                          style={{
-                            ...S.inp,
-                            fontSize: 18,
-                            fontWeight: 900,
-                            color: "#a78bfa",
-                            background: "transparent",
-                            border: "none",
-                            borderBottom: "1px solid #a78bfa",
-                            borderRadius: 0,
-                            padding: "2px 0",
-                            fontFamily: T.mono,
-                          }}
-                          type="number"
-                          value={pct ? (co[k] * 100).toFixed(0) : co[k]}
-                          onChange={(e) =>
-                            setCoField(
-                              k,
-                              pct ? +e.target.value / 100 : +e.target.value,
-                            )
-                          }
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            fontSize: 20,
-                            fontWeight: 900,
-                            color: "#a78bfa",
-                            fontFamily: T.mono,
-                          }}
-                        >
-                          {pct
-                            ? `${(co.margin * 100).toFixed(0)}%`
-                            : `₹${co[k]}`}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button style={S.btn} onClick={() => setStep(2)}>
-                  PROCEED TO RFQ INPUT →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ════════ STEP 2: RFQ UPLOAD ════════ */}
-          {step === 2 && (
-            <div>
-              <div style={{ marginBottom: 22 }}>
-                <div
-                  style={{
-                    fontFamily: T.display,
-                    fontSize: 34,
-                    fontWeight: 900,
-                    letterSpacing: "-1px",
-                    color: T.text,
-                    lineHeight: 1,
-                  }}
-                >
-                  RFQ<span style={{ color: T.accent }}> INPUT</span>
-                </div>
-                <div style={{ fontSize: 12, color: T.textMid, marginTop: 6 }}>
-                  Upload PDFs, engineering drawings, or paste email text. AI
-                  extracts all specifications automatically.
-                </div>
-              </div>
-
-              {/* PDF/Drawing Upload — PRIMARY */}
-              <div
-                style={{
-                  ...S.cardHi,
-                  border: `1px solid ${T.accent}30`,
-                  background: `linear-gradient(135deg,${T.card},${T.cardHi})`,
-                }}
-              >
-                <SectionHead>
-                  📄 Upload PDF / Engineering Drawing
-                  <Tag color={T.accent}>PRIMARY</Tag>
-                </SectionHead>
-                <div
-                  style={{
-                    border: `2px dashed ${T.accent}40`,
-                    borderRadius: 10,
-                    padding: "36px 24px",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "all .2s",
-                    background: `${T.accent}06`,
-                  }}
-                  onClick={() => fileInputRef.current?.click()}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = T.accent;
-                    e.currentTarget.style.background = `${T.accent}10`;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = `${T.accent}40`;
-                    e.currentTarget.style.background = `${T.accent}06`;
-                  }}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    handleFiles(e.dataTransfer.files);
-                  }}
-                >
-                  <div style={{ fontSize: 40, marginBottom: 10 }}>📂</div>
+                    </Sel>
+                  </Fld>
+                  <Fld
+                    label="Default Currency"
+                    hint="Same as the top-bar selector - change either to update all values"
+                  >
+                    <CcySel ccy={ccy} setCcy={setCcy} ccyList={ccyList} />
+                  </Fld>
                   <div
                     style={{
-                      fontFamily: T.display,
-                      fontSize: 18,
-                      fontWeight: 800,
-                      color: T.accent,
-                      letterSpacing: "1px",
+                      padding: "10px 14px",
+                      background: K.surf,
+                      borderRadius: 9,
+                      border: "1px solid " + K.bdr,
+                      fontSize: 12,
+                      color: K.sub,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: 6,
                     }}
                   >
-                    DROP FILES HERE
+                    <span>
+                      Rs 10,000 ={" "}
+                      <b style={{ color: K.blue }}>
+                        {curr.sym}
+                        {(10000 / curr.rate).toFixed(2)} {ccy}
+                      </b>
+                    </span>
+                    <Tag col={ccySrc === "Live" ? K.grn : K.yel} sm>
+                      {ccySrc === "Live" ? "Live rates" : "Built-in rates"}
+                    </Tag>
                   </div>
-                  <div style={{ fontSize: 11, color: T.textMid, marginTop: 6 }}>
-                    PDF · PNG · JPG · DXF · STEP — Multiple files supported
+                </div>
+              </Card>
+
+              <Card>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 14,
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  <SH>Machine Rates (Rs/hr)</SH>
+                  <Btn
+                    v={editRates ? "success" : "outline"}
+                    sz="sm"
+                    onClick={() => setEditRates((v) => !v)}
+                  >
+                    {editRates ? "Done" : "Edit"}
+                  </Btn>
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3,1fr)",
+                    gap: 8,
+                  }}
+                >
+                  {[
+                    { k: "laser", l: "Laser" },
+                    { k: "cnc", l: "CNC" },
+                    { k: "bending", l: "Bending" },
+                    { k: "welding", l: "Welding" },
+                    { k: "grinding", l: "Grinding" },
+                    { k: "labor", l: "Labor/hr" },
+                    { k: "finishing", l: "Finish" },
+                    { k: "packaging", l: "Pkg" },
+                    { k: "transport", l: "Transport" },
+                  ].map(({ k, l }) => (
+                    <div
+                      key={k}
+                      style={{
+                        background: K.surf,
+                        border: "1px solid " + K.bdr,
+                        borderRadius: 9,
+                        padding: "10px 11px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 9,
+                          color: K.sub,
+                          marginBottom: 4,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.8,
+                        }}
+                      >
+                        {l}
+                      </div>
+                      {editRates ? (
+                        <input
+                          type="number"
+                          value={co[k]}
+                          onChange={(e) => setCoF(k, +e.target.value)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            borderBottom: "1px solid " + K.blue,
+                            color: K.blue,
+                            fontSize: 15,
+                            fontWeight: 800,
+                            fontFamily: K.mono,
+                            width: "100%",
+                            outline: "none",
+                            padding: "2px 0",
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            fontSize: 15,
+                            fontWeight: 800,
+                            color: K.blue,
+                            fontFamily: K.mono,
+                          }}
+                        >
+                          Rs{co[k]}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    background: K.surf,
+                    border: "1px solid " + K.bdr,
+                    borderRadius: 9,
+                    padding: "10px 11px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9,
+                      color: K.sub,
+                      marginBottom: 4,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.8,
+                    }}
+                  >
+                    Profit Margin %
                   </div>
-                  <div style={{ fontSize: 10, color: T.textDim, marginTop: 4 }}>
-                    AI reads: Title blocks · BOM tables · Dimensions · Material
-                    specs · Surface finish callouts · Notes
+                  {editRates ? (
+                    <input
+                      type="number"
+                      value={(co.margin * 100).toFixed(0)}
+                      onChange={(e) => setCoF("margin", +e.target.value / 100)}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        borderBottom: "1px solid " + K.grn,
+                        color: K.grn,
+                        fontSize: 15,
+                        fontWeight: 800,
+                        fontFamily: K.mono,
+                        width: "100%",
+                        outline: "none",
+                        padding: "2px 0",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 800,
+                        color: K.grn,
+                        fontFamily: K.mono,
+                      }}
+                    >
+                      {(co.margin * 100).toFixed(0)}%
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                marginTop: 4,
+              }}
+            >
+              <Btn v="primary" sz="lg" onClick={() => setStep(2)}>
+                Continue to RFQ Input
+              </Btn>
+            </div>
+          </>
+        )}
+
+        {/* ==== STEP 2: INPUT ==== */}
+        {step === 2 && (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <h1
+                style={{
+                  fontSize: sm ? 19 : 26,
+                  fontWeight: 800,
+                  color: K.txt,
+                  marginBottom: 4,
+                  letterSpacing: -0.4,
+                }}
+              >
+                RFQ Input
+              </h1>
+              <p style={{ fontSize: 12.5, color: K.sub }}>
+                Paste the client email and/or upload engineering drawings. Llama
+                3.3 70B reads both for maximum extraction accuracy.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 14,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <Tag col={K.pur}>Llama 3.3 70B</Tag>
+              <Tag col={K.cyan}>Tesseract OCR</Tag>
+              <Tag col={K.grn}>Smart Rules fallback</Tag>
+              {groqKey ? (
+                <Tag col={K.grn}>Key: Active</Tag>
+              ) : (
+                <span style={{ fontSize: 11, color: K.yel }}>
+                  No key -{" "}
+                  <button
+                    onClick={() => setShowKeyDlg(true)}
+                    style={{
+                      color: K.blue,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      fontSize: 11,
+                      padding: 0,
+                    }}
+                  >
+                    add Groq key
+                  </button>{" "}
+                  or use rules
+                </span>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: lg ? "1fr 1fr" : "1fr",
+                gap: 14,
+                marginBottom: 14,
+              }}
+            >
+              {/* Email */}
+              <Card style={{ marginBottom: 0 }}>
+                <SH>Email / RFQ Text</SH>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: K.sub,
+                    marginBottom: 10,
+                    padding: "8px 12px",
+                    background: K.surf,
+                    borderRadius: 8,
+                    border: "1px solid " + K.bdr,
+                    lineHeight: 1.8,
+                  }}
+                >
+                  <b style={{ color: K.txt }}>Extracted from email:</b> client,
+                  delivery, deadline, quantity, material, process, finish,
+                  dimensions.
+                </div>
+                <textarea
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={
+                    "Paste the full client RFQ email here.\n\nExample:\nFrom: purchase@acme.com\nSubject: RFQ - Laser Cut Brackets\n\nPlease quote 50 pcs Mild Steel brackets,\n5mm thick, 200 x 100mm.\nLaser Cutting, Powder Coat finish.\nDeliver to: Chennai. Required within 12 days."
+                  }
+                  style={{
+                    background: K.surf,
+                    border: "1px solid " + K.bdr,
+                    borderRadius: 9,
+                    padding: 14,
+                    color: K.txt,
+                    fontSize: 12.5,
+                    width: "100%",
+                    boxSizing: "border-box",
+                    fontFamily: K.ff,
+                    outline: "none",
+                    resize: "vertical",
+                    minHeight: sm ? 160 : 230,
+                    lineHeight: 1.7,
+                    transition: "border-color .2s",
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = K.blue)}
+                  onBlur={(e) => (e.target.style.borderColor = K.bdr)}
+                />
+                {email.trim() && (
+                  <div style={{ marginTop: 6, fontSize: 10.5, color: K.grn }}>
+                    Ready: {email.trim().split(/\s+/).length} words
+                  </div>
+                )}
+              </Card>
+
+              {/* Drawings */}
+              <Card style={{ marginBottom: 0 }}>
+                <SH>CAD Drawings / Images</SH>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: K.sub,
+                    marginBottom: 10,
+                    padding: "8px 12px",
+                    background: K.surf,
+                    borderRadius: 8,
+                    border: "1px solid " + K.bdr,
+                    lineHeight: 1.8,
+                  }}
+                >
+                  <b style={{ color: K.txt }}>OCR extracts from drawings:</b>{" "}
+                  dimensions, title block (material, scale), BOM table, surface
+                  finish callouts.
+                </div>
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.style.borderColor = K.pur;
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.style.borderColor = files.length
+                      ? K.pur
+                      : K.bdr;
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.style.borderColor = files.length
+                      ? K.pur
+                      : K.bdr;
+                    handleFiles(e.dataTransfer.files);
+                  }}
+                  onClick={() => fileRef.current && fileRef.current.click()}
+                  style={{
+                    border: "2px dashed " + (files.length ? K.pur : K.bdr),
+                    borderRadius: 10,
+                    padding: "22px 16px",
+                    textAlign: "center",
+                    cursor: "pointer",
+                    transition: "border-color .2s",
+                    minHeight: 88,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ fontSize: 30 }}>IMG</div>
+                  <div
+                    style={{ fontSize: 12.5, fontWeight: 600, color: K.sub }}
+                  >
+                    Drop drawings or click to browse
+                  </div>
+                  <div style={{ fontSize: 10, color: K.dim }}>
+                    PNG, JPG, JPEG, WEBP, TIFF (max 6)
                   </div>
                   <input
-                    ref={fileInputRef}
+                    ref={fileRef}
                     type="file"
                     multiple
-                    accept=".pdf,.png,.jpg,.jpeg,.dxf,.step,.iges,.dwg"
+                    accept="image/*"
                     onChange={(e) => handleFiles(e.target.files)}
                     style={{ display: "none" }}
                   />
                 </div>
-
-                {uploadedFiles.length > 0 && (
-                  <div style={{ marginTop: 14 }}>
-                    {uploadedFiles.map((f, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          padding: "10px 14px",
-                          background: T.surface,
-                          borderRadius: 8,
-                          border: `1px solid ${T.border}`,
-                          marginBottom: 6,
-                        }}
-                      >
-                        <Tag
-                          color={
-                            f.type === "PDF"
-                              ? T.accent
-                              : f.type === "PNG" || f.type === "JPG"
-                                ? T.pink
-                                : T.accent2
-                          }
-                        >
-                          {f.type}
-                        </Tag>
-                        <span
+                {files.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: K.pur,
+                        marginBottom: 8,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.8,
+                      }}
+                    >
+                      {files.length} drawing(s) - OCR + Llama will extract specs
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {files.map((f, i) => (
+                        <div
+                          key={i}
                           style={{
-                            flex: 1,
-                            fontSize: 12,
-                            color: T.text,
-                            fontWeight: 600,
+                            position: "relative",
+                            width: sm ? 60 : 72,
+                            height: sm ? 60 : 72,
+                            borderRadius: 9,
+                            overflow: "hidden",
+                            border: "2px solid " + K.pur + "50",
+                            background: K.surf,
+                            flexShrink: 0,
                           }}
                         >
-                          {f.name}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 10,
-                            color: T.textDim,
-                            fontFamily: T.mono,
-                          }}
-                        >
-                          {f.size}
-                        </span>
-                        <button
-                          style={{
-                            ...S.btnGreen,
-                            fontSize: 9,
-                            padding: "5px 12px",
-                          }}
-                          onClick={() => extractFromFile(f)}
-                          disabled={busy}
-                        >
-                          ⚡ AI EXTRACT
-                        </button>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: T.red,
-                            cursor: "pointer",
-                            padding: "4px 8px",
-                          }}
-                          onClick={() =>
-                            setUploadedFiles((prev) =>
-                              prev.filter((_, j) => j !== i),
-                            )
-                          }
-                        >
-                          ✕
-                        </span>
-                      </div>
-                    ))}
-                    {drawingInfo?.has_drawing && (
-                      <div
-                        style={{
-                          padding: "10px 14px",
-                          background: `${T.green}10`,
-                          border: `1px solid ${T.green}30`,
-                          borderRadius: 8,
-                          fontSize: 11,
-                          color: T.green,
-                          marginTop: 8,
-                        }}
-                      >
-                        ✅ Drawing analysed:{" "}
-                        {drawingInfo.drawing_title || "Technical Drawing"}{" "}
-                        {drawingInfo.revision
-                          ? `· Rev ${drawingInfo.revision}`
-                          : ""}{" "}
-                        · Tolerance: {drawingInfo.general_tolerance || "—"} ·
-                        Ra: {drawingInfo.surface_roughness || "—"}
-                      </div>
-                    )}
+                          <img
+                            src={f.url}
+                            alt={f.name}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                            }}
+                          />
+                          <button
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              URL.revokeObjectURL(f.url);
+                              setFiles((prev) =>
+                                prev.filter((_, j) => j !== i),
+                              );
+                            }}
+                            style={{
+                              position: "absolute",
+                              top: 2,
+                              right: 2,
+                              width: 17,
+                              height: 17,
+                              borderRadius: "50%",
+                              background: K.red,
+                              border: "none",
+                              color: "#fff",
+                              fontSize: 9,
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontWeight: 700,
+                            }}
+                          >
+                            X
+                          </button>
+                          <div
+                            style={{
+                              position: "absolute",
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              background: "rgba(7,9,15,.85)",
+                              fontSize: 7,
+                              color: K.pur,
+                              padding: "2px 3px",
+                              textAlign: "center",
+                              fontWeight: 700,
+                            }}
+                          >
+                            DWG
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-              </div>
-
-              {/* Email Text */}
-              <div style={S.card}>
-                <SectionHead>📧 Paste Email / RFQ Text</SectionHead>
-                <textarea
-                  style={S.ta}
-                  value={emailText}
-                  onChange={(e) => setEmailText(e.target.value)}
-                  placeholder={
-                    "Paste the client's RFQ email here. AI will extract:\n• Client: company, name, email, phone, GSTIN, address\n• Multiple parts with material, dimensions, process, finish, tolerances\n• Delivery requirements and deadlines\n\nExample:\nFrom: Rajesh Kumar <rajesh@abc.com> · ABC Engineering Pvt Ltd · GSTIN: 29ABCDE1234F1Z5\n\nPart 1 — Laser Cut Brackets · Mild Steel · 5mm · 200×100mm · Qty 50 · Powder Coat\nPart 2 — CNC Flanges · SS304 · 10mm · 150×150mm · Qty 20 · Mirror Polish\nDelivery: Pune, required within 14 days"
-                  }
-                />
-                <div style={{ marginTop: 12, display: "flex", gap: 9 }}>
-                  <button
-                    style={S.btn}
-                    onClick={extractFromEmailText}
-                    disabled={busy}
-                  >
-                    {busy ? "⏳ EXTRACTING..." : "⚡ EXTRACT WITH AI"}
-                  </button>
-                  <button style={S.btnGhost} onClick={() => setStep(3)}>
-                    MANUAL ENTRY →
-                  </button>
-                </div>
-              </div>
-
-              <div
-                style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}
-              >
-                <button style={S.btnGhost} onClick={() => setStep(1)}>
-                  ← BACK
-                </button>
-                <button style={S.btn} onClick={() => setStep(3)}>
-                  NEXT: CLIENT DETAILS →
-                </button>
-              </div>
+              </Card>
             </div>
-          )}
 
-          {/* ════════ STEP 3: CLIENT ════════ */}
-          {step === 3 && (
-            <div>
-              <div style={{ marginBottom: 22 }}>
-                <div
-                  style={{
-                    fontFamily: T.display,
-                    fontSize: 34,
-                    fontWeight: 900,
-                    letterSpacing: "-1px",
-                    color: T.text,
-                    lineHeight: 1,
-                  }}
-                >
-                  CLIENT<span style={{ color: T.accent }}> DETAILS</span>
-                </div>
-                <div style={{ fontSize: 12, color: T.textMid, marginTop: 6 }}>
-                  All fields appear on the quotation PDF. AI-extracted fields
-                  are pre-filled — review and correct.
-                </div>
-              </div>
-
-              <div style={S.card}>
-                <SectionHead>🏢 Company & Contact</SectionHead>
-                <div style={S.g2}>
-                  <Field label="Company Name">
-                    <input
-                      style={S.inp}
-                      value={client.company}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, company: e.target.value }))
-                      }
-                      placeholder="ABC Engineering Pvt Ltd"
-                    />
-                  </Field>
-                  <Field label="Contact Person">
-                    <input
-                      style={S.inp}
-                      value={client.name}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, name: e.target.value }))
-                      }
-                      placeholder="Rajesh Kumar"
-                    />
-                  </Field>
-                  <Field label="Email">
-                    <input
-                      style={S.inp}
-                      type="email"
-                      value={client.email}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, email: e.target.value }))
-                      }
-                      placeholder="rajesh@abc.com"
-                    />
-                  </Field>
-                  <Field label="Phone / Mobile">
-                    <input
-                      style={S.inp}
-                      type="tel"
-                      value={client.phone}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, phone: e.target.value }))
-                      }
-                      placeholder="+91 98765 43210"
-                    />
-                  </Field>
-                  <Field label="GSTIN" hint="15-digit">
-                    <input
-                      style={S.inp}
-                      value={client.gst}
-                      onChange={(e) =>
-                        setClient((p) => ({
-                          ...p,
-                          gst: e.target.value.toUpperCase(),
-                        }))
-                      }
-                      placeholder="29ABCDE1234F1Z5"
-                      maxLength={15}
-                    />
-                  </Field>
-                  <Field label="PAN">
-                    <input
-                      style={S.inp}
-                      value={client.pan}
-                      onChange={(e) =>
-                        setClient((p) => ({
-                          ...p,
-                          pan: e.target.value.toUpperCase(),
-                        }))
-                      }
-                      placeholder="ABCDE1234F"
-                      maxLength={10}
-                    />
-                  </Field>
-                </div>
-              </div>
-
-              <div style={S.card}>
-                <SectionHead>📍 Delivery Address</SectionHead>
-                <div style={S.g2}>
-                  <Field label="Street / Area" col2>
-                    <input
-                      style={S.inp}
-                      value={client.address}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, address: e.target.value }))
-                      }
-                      placeholder="Plot 12, MIDC Industrial Area, Phase 2"
-                    />
-                  </Field>
-                  <Field label="City">
-                    <input
-                      style={S.inp}
-                      value={client.city}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, city: e.target.value }))
-                      }
-                      placeholder="Pune"
-                    />
-                  </Field>
-                  <Field label="State">
-                    <input
-                      style={S.inp}
-                      value={client.state}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, state: e.target.value }))
-                      }
-                      placeholder="Maharashtra"
-                    />
-                  </Field>
-                  <Field label="Pincode">
-                    <input
-                      style={S.inp}
-                      value={client.pincode}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, pincode: e.target.value }))
-                      }
-                      placeholder="411018"
-                    />
-                  </Field>
-                  <Field label="Country">
-                    <input
-                      style={S.inp}
-                      value={client.country}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, country: e.target.value }))
-                      }
-                      placeholder="India"
-                    />
-                  </Field>
-                </div>
-              </div>
-
-              <div style={S.card}>
-                <SectionHead>📋 Commercial Terms</SectionHead>
-                <div style={S.g3}>
-                  <Field label="Required Delivery (Days)">
-                    <input
-                      style={S.inp}
-                      type="number"
-                      min="1"
-                      value={client.required_days}
-                      onChange={(e) =>
-                        setClient((p) => ({
-                          ...p,
-                          required_days: e.target.value,
-                        }))
-                      }
-                      placeholder="e.g. 14"
-                    />
-                  </Field>
-                  <Field label="Payment Terms">
-                    <select
-                      style={S.sel}
-                      value={client.payment_terms}
-                      onChange={(e) =>
-                        setClient((p) => ({
-                          ...p,
-                          payment_terms: e.target.value,
-                        }))
-                      }
-                    >
-                      <option>50% Advance, Balance Before Dispatch</option>
-                      <option>100% Advance</option>
-                      <option>30 Days Credit</option>
-                      <option>45 Days Credit</option>
-                      <option>60 Days Credit</option>
-                      <option>LC at Sight</option>
-                      <option>Custom</option>
-                    </select>
-                  </Field>
-                  <Field label="Incoterms">
-                    <select
-                      style={S.sel}
-                      value={client.incoterms}
-                      onChange={(e) =>
-                        setClient((p) => ({ ...p, incoterms: e.target.value }))
-                      }
-                    >
-                      <option>Ex-Works</option>
-                      <option>FOR Destination</option>
-                      <option>DDP</option>
-                      <option>FCA</option>
-                      <option>FOB</option>
-                      <option>CIF</option>
-                    </select>
-                  </Field>
-                </div>
-              </div>
-
-              <div
-                style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}
-              >
-                <button style={S.btnGhost} onClick={() => setStep(2)}>
-                  ← BACK
-                </button>
-                <button style={S.btn} onClick={() => setStep(4)}>
-                  NEXT: PARTS →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ════════ STEP 4: PARTS ════════ */}
-          {step === 4 && (
-            <div>
+            {/* Progress bar */}
+            {busy && (
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-end",
-                  marginBottom: 22,
+                  marginBottom: 12,
+                  padding: "12px 16px",
+                  background: K.card,
+                  border: "1px solid " + K.bdr,
+                  borderRadius: 10,
                 }}
               >
-                <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: 7,
+                    fontSize: 12,
+                  }}
+                >
+                  <span style={{ color: K.blue, fontWeight: 600 }}>
+                    {prog.msg || "Processing..."}
+                  </span>
+                  <span style={{ color: K.sub, fontFamily: K.mono }}>
+                    {prog.pct}%
+                  </span>
+                </div>
+                <div
+                  style={{
+                    height: 4,
+                    background: K.dim,
+                    borderRadius: 4,
+                    overflow: "hidden",
+                  }}
+                >
                   <div
                     style={{
-                      fontFamily: T.display,
-                      fontSize: 34,
-                      fontWeight: 900,
-                      letterSpacing: "-1px",
-                      color: T.text,
-                      lineHeight: 1,
+                      height: "100%",
+                      width: prog.pct + "%",
+                      background:
+                        "linear-gradient(90deg," + K.pur + "," + K.blue + ")",
+                      borderRadius: 4,
+                      transition: "width .4s",
                     }}
-                  >
-                    PARTS &amp;<span style={{ color: T.accent }}> SPECS</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: T.textMid, marginTop: 6 }}>
-                    Define each part from the RFQ. AI-extracted data pre-filled
-                    from drawing/email.
-                  </div>
+                  />
                 </div>
-                <button
-                  style={{ ...S.btnGhost, fontSize: 10 }}
-                  onClick={addPart}
-                >
-                  + ADD PART
-                </button>
               </div>
+            )}
 
-              {/* Part tabs */}
+            <Card>
               <div
                 style={{
                   display: "flex",
-                  gap: 6,
+                  gap: 10,
                   flexWrap: "wrap",
-                  marginBottom: 14,
                   alignItems: "center",
                 }}
               >
-                {parts.map((p, i) => (
-                  <div
-                    key={p.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      background:
-                        activePartIdx === i ? `${T.accent}18` : T.card,
-                      border: `1px solid ${activePartIdx === i ? T.accent : T.border}`,
-                      borderRadius: 8,
-                      padding: "7px 12px",
-                      cursor: "pointer",
-                      color: activePartIdx === i ? T.accent : T.textMid,
-                    }}
-                    onClick={() => setActive(i)}
-                  >
-                    <span style={{ fontSize: 10, fontFamily: T.mono }}>
-                      {partValid(p) ? "✓" : "!"}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        fontFamily: T.display,
-                        letterSpacing: "0.5px",
-                      }}
-                    >
-                      {p.partName || `PART ${i + 1}`}
-                    </span>
-                    {p.extracted_from_drawing && <Tag color={T.green}>DWG</Tag>}
-                    {parts.length > 1 && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: T.red,
-                          marginLeft: 2,
-                          padding: "1px 4px",
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removePart(i);
-                        }}
-                      >
-                        ✕
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {parts.map((p, i) => (
-                <div
-                  key={p.id}
-                  style={{ display: activePartIdx === i ? "block" : "none" }}
+                <Btn
+                  v="primary"
+                  sz={sm ? "md" : "lg"}
+                  disabled={busy}
+                  onClick={doAI}
                 >
-                  <div style={S.card}>
+                  {busy
+                    ? "Extracting..."
+                    : files.length > 0 && email.trim()
+                      ? "Extract - Email + Drawings"
+                      : files.length > 0
+                        ? "Extract from Drawings"
+                        : "Extract from Email"}
+                </Btn>
+                <Btn v="outline" disabled={busy} onClick={doRegex}>
+                  Smart Rules Only
+                </Btn>
+                <Btn v="ghost" onClick={() => setStep(3)}>
+                  Manual Entry
+                </Btn>
+                {aiSrc && (
+                  <Tag col={K.grn} sm>
+                    Last: {aiSrc}
+                  </Tag>
+                )}
+              </div>
+              {!groqKey && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: "9px 13px",
+                    background: K.yel + "0d",
+                    border: "1px solid " + K.yel + "22",
+                    borderRadius: 8,
+                    fontSize: 11.5,
+                    color: K.yel,
+                  }}
+                >
+                  No Groq key - extraction uses smart rules only.{" "}
+                  <button
+                    onClick={() => setShowKeyDlg(true)}
+                    style={{
+                      color: K.blue,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      fontSize: 11.5,
+                      padding: 0,
+                    }}
+                  >
+                    Add free Groq key for Llama AI
+                  </button>
+                </div>
+              )}
+              <div
+                style={{
+                  marginTop: 10,
+                  fontSize: 10.5,
+                  color: K.sub,
+                  lineHeight: 1.85,
+                }}
+              >
+                <b style={{ color: K.txt }}>Pipeline:</b> Tesseract OCR
+                (drawings) then Llama 3.3 70B via Groq then Llama 3.1 8B then
+                Smart Rules. Results merged for max accuracy.
+              </div>
+            </Card>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <Btn v="outline" onClick={() => setStep(1)}>
+                Back
+              </Btn>
+              <Btn v="primary" onClick={() => setStep(3)}>
+                Review Parameters
+              </Btn>
+            </div>
+          </>
+        )}
+
+        {/* ==== STEP 3: REVIEW ==== */}
+        {step === 3 && (
+          <>
+            <div
+              style={{
+                marginBottom: 16,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+                gap: 8,
+              }}
+            >
+              <div>
+                <h1
+                  style={{
+                    fontSize: sm ? 19 : 26,
+                    fontWeight: 800,
+                    color: K.txt,
+                    marginBottom: 4,
+                    letterSpacing: -0.4,
+                  }}
+                >
+                  Review Parameters
+                </h1>
+                <p style={{ fontSize: 12.5, color: K.sub }}>
+                  Verify extracted values. Fix any errors. Required fields
+                  marked *.
+                </p>
+              </div>
+              {aiSrc && (
+                <Tag col={K.grn} sm>
+                  Source: {aiSrc}
+                </Tag>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: sm ? "1fr" : lg ? "1fr 1fr" : "1fr 1fr",
+                gap: 14,
+              }}
+            >
+              <Card>
+                <SH>Client and Delivery</SH>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                >
+                  <Fld label="Client / Company">
+                    <Inp
+                      value={p.client}
+                      onChange={(e) =>
+                        setP((x) => ({ ...x, client: e.target.value }))
+                      }
+                      placeholder="e.g. ACME Engineering Pvt Ltd"
+                    />
+                  </Fld>
+                  <Fld label="Delivery Location">
+                    <Inp
+                      value={p.delivery}
+                      onChange={(e) =>
+                        setP((x) => ({ ...x, delivery: e.target.value }))
+                      }
+                      placeholder="e.g. Chennai, Tamil Nadu"
+                    />
+                  </Fld>
+                  <Fld
+                    label="Required Delivery (days)"
+                    hint="Client's requested window - used in lead time comparison"
+                  >
                     <div
+                      style={{ display: "flex", gap: 10, alignItems: "center" }}
+                    >
+                      <Inp
+                        type="number"
+                        min="1"
+                        value={p.required_days}
+                        onChange={(e) =>
+                          setP((x) => ({ ...x, required_days: e.target.value }))
+                        }
+                        placeholder="12"
+                        style={{ maxWidth: 120 }}
+                      />
+                      {p.required_days && (
+                        <Tag col={K.yel} sm>
+                          Target: {p.required_days} days
+                        </Tag>
+                      )}
+                    </div>
+                  </Fld>
+                </div>
+              </Card>
+
+              <Card>
+                <SH>Part Specifications</SH>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 10,
+                    }}
+                  >
+                    <Fld
+                      label="Material"
+                      required
+                      err={
+                        !p.material && missing.includes("material")
+                          ? "Required"
+                          : ""
+                      }
+                    >
+                      <Sel
+                        value={p.material}
+                        onChange={(e) =>
+                          setP((x) => ({ ...x, material: e.target.value }))
+                        }
+                      >
+                        <option value="">Select material</option>
+                        {MATS.map((m) => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </Sel>
+                      {p.material &&
+                        (() => {
+                          const m = MATS.find((x) => x.name === p.material);
+                          return m ? (
+                            <span style={{ fontSize: 9.5, color: K.grn }}>
+                              {m.density}kg/m3 - Rs{m.ppkg}/kg
+                            </span>
+                          ) : null;
+                        })()}
+                    </Fld>
+                    <Fld
+                      label="Process"
+                      required
+                      err={
+                        !p.process && missing.includes("process")
+                          ? "Required"
+                          : ""
+                      }
+                    >
+                      <Sel
+                        value={p.process}
+                        onChange={(e) =>
+                          setP((x) => ({ ...x, process: e.target.value }))
+                        }
+                      >
+                        <option value="">Select process</option>
+                        {PROCS.map((pr) => (
+                          <option key={pr.name} value={pr.name}>
+                            {pr.name}
+                          </option>
+                        ))}
+                      </Sel>
+                      {p.process &&
+                        (() => {
+                          const pr = PROCS.find((x) => x.name === p.process);
+                          return pr ? (
+                            <span style={{ fontSize: 9.5, color: K.grn }}>
+                              T: {pr.min_t}-{pr.max_t}mm
+                            </span>
+                          ) : null;
+                        })()}
+                    </Fld>
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 1fr",
+                      gap: 10,
+                    }}
+                  >
+                    <Fld
+                      label="Thickness mm"
+                      required
+                      err={!p.thickness ? "Required" : ""}
+                    >
+                      <Inp
+                        type="number"
+                        min="0.1"
+                        step="0.5"
+                        value={p.thickness}
+                        onChange={(e) =>
+                          setP((x) => ({ ...x, thickness: e.target.value }))
+                        }
+                        placeholder="5"
+                      />
+                    </Fld>
+                    <Fld
+                      label="Length mm"
+                      required
+                      err={!p.length ? "Required" : ""}
+                    >
+                      <Inp
+                        type="number"
+                        min="1"
+                        value={p.length}
+                        onChange={(e) =>
+                          setP((x) => ({ ...x, length: e.target.value }))
+                        }
+                        placeholder="200"
+                      />
+                    </Fld>
+                    <Fld
+                      label="Width mm"
+                      required
+                      err={!p.width ? "Required" : ""}
+                    >
+                      <Inp
+                        type="number"
+                        min="1"
+                        value={p.width}
+                        onChange={(e) =>
+                          setP((x) => ({ ...x, width: e.target.value }))
+                        }
+                        placeholder="100"
+                      />
+                    </Fld>
+                  </div>
+                  <Fld
+                    label="Quantity (pcs)"
+                    required
+                    err={!p.quantity ? "Required" : ""}
+                  >
+                    <Inp
+                      type="number"
+                      min="1"
+                      value={p.quantity}
+                      onChange={(e) =>
+                        setP((x) => ({ ...x, quantity: e.target.value }))
+                      }
+                      placeholder="50"
+                    />
+                  </Fld>
+                  <Fld
+                    label="Surface Finish"
+                    hint="e.g. Powder Coat, Anodize Black, Hot-Dip Galvanize, Shot Blast, Raw"
+                  >
+                    <Inp
+                      value={p.finish}
+                      onChange={(e) =>
+                        setP((x) => ({ ...x, finish: e.target.value }))
+                      }
+                      placeholder="Powder Coat - Black RAL 9005"
+                    />
+                  </Fld>
+                </div>
+              </Card>
+            </div>
+
+            <Card>
+              {!valid ? (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "9px 13px",
+                      background: K.red + "12",
+                      border: "1px solid " + K.red + "28",
+                      borderRadius: 8,
+                      fontSize: 12,
+                      color: K.red,
+                      flex: 1,
+                    }}
+                  >
+                    Complete all required fields to proceed.
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {missing.map((f) => (
+                      <Tag key={f} col={K.red} sm>
+                        {f}
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    padding: "10px 14px",
+                    background: K.grn + "10",
+                    border: "1px solid " + K.grn + "25",
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    color: K.grn,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  <span>All fields complete - ready to calculate</span>
+                  {p.required_days && (
+                    <Tag col={K.yel} sm>
+                      Client target: {p.required_days} days
+                    </Tag>
+                  )}
+                </div>
+              )}
+            </Card>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <Btn v="outline" onClick={() => setStep(2)}>
+                Back
+              </Btn>
+              <Btn v="primary" sz="lg" disabled={!valid} onClick={run}>
+                Calculate Costs
+              </Btn>
+            </div>
+          </>
+        )}
+
+        {/* ==== STEP 4: COSTS ==== */}
+        {step === 4 &&
+          base &&
+          displayCosts &&
+          (() => {
+            const maxV = Math.max(
+              ...CROW.map((r) => displayCosts[r.k] || 0),
+              1,
+            );
+            return (
+              <>
+                <div
+                  style={{
+                    marginBottom: 16,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                    gap: 10,
+                  }}
+                >
+                  <div>
+                    <h1
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: 16,
+                        fontSize: sm ? 19 : 26,
+                        fontWeight: 800,
+                        color: K.txt,
+                        marginBottom: 4,
+                        letterSpacing: -0.4,
                       }}
                     >
-                      <SectionHead>
-                        🔩 Part {i + 1} — Specifications
-                      </SectionHead>
-                      <button
+                      Cost Analysis
+                    </h1>
+                    <p style={{ fontSize: 12.5, color: K.sub }}>
+                      Click any row to override. Currency updates all values
+                      instantly.
+                    </p>
+                  </div>
+                  {/* Currency also here for quick access - same state, same effect */}
+                  <CcySel ccy={ccy} setCcy={setCcy} ccyList={ccyList} />
+                </div>
+
+                {/* Stats row */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: sm ? "1fr 1fr" : "repeat(4,1fr)",
+                    gap: 10,
+                    marginBottom: 14,
+                  }}
+                >
+                  <StatCard
+                    icon="$"
+                    label="Total Cost"
+                    value={
+                      curr.sym + Math.round(displayCosts.total).toLocaleString()
+                    }
+                    col={K.blue}
+                  />
+                  <StatCard
+                    icon="*"
+                    label="Per Part"
+                    value={curr.sym + displayCosts.per_part.toFixed(2)}
+                    col={K.pur}
+                  />
+                  <StatCard
+                    icon="D"
+                    label="Lead Time"
+                    value={lt ? lt.total + "d" : "--"}
+                    col={K.grn}
+                    sub={
+                      p.required_days
+                        ? lt && lt.total <= +p.required_days
+                          ? "Within target"
+                          : "Over target"
+                        : undefined
+                    }
+                  />
+                  <StatCard
+                    icon="!"
+                    label="Complexity"
+                    value={feas.complexity}
+                    col={
+                      feas.complexity === "High"
+                        ? K.red
+                        : feas.complexity === "Medium"
+                          ? K.yel
+                          : K.grn
+                    }
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: lg ? "1.6fr 1fr" : "1fr",
+                    gap: 14,
+                  }}
+                >
+                  {/* Left - cost breakdown */}
+                  <div>
+                    <Card>
+                      <div
                         style={{
-                          ...S.btnGhost,
-                          fontSize: 9,
-                          padding: "5px 12px",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: 14,
+                          flexWrap: "wrap",
+                          gap: 8,
                         }}
-                        onClick={() => dupPart(i)}
                       >
-                        ⧉ DUPLICATE
-                      </button>
-                    </div>
+                        <SH>Cost Breakdown - click to edit</SH>
+                        {Object.keys(ov).length > 0 && (
+                          <Btn
+                            v="ghost"
+                            sz="sm"
+                            onClick={() => setOv({})}
+                            style={{ color: K.red, fontSize: 11 }}
+                          >
+                            Reset overrides
+                          </Btn>
+                        )}
+                      </div>
 
-                    <div style={{ ...S.g2, marginBottom: 12 }}>
-                      <Field label="Part Name / Item">
-                        <input
-                          style={S.inp}
-                          value={p.partName}
-                          onChange={(e) =>
-                            setPart(i, "partName", e.target.value)
-                          }
-                          placeholder="e.g. Bracket-A, Flange-001"
-                        />
-                      </Field>
-                      <Field label="Drawing Number">
-                        <input
-                          style={S.inp}
-                          value={p.drawingNo}
-                          onChange={(e) =>
-                            setPart(i, "drawingNo", e.target.value)
-                          }
-                          placeholder="e.g. DRG-2024-001 Rev B"
-                        />
-                      </Field>
-                      <Field label="Description" col2>
-                        <input
-                          style={S.inp}
-                          value={p.description}
-                          onChange={(e) =>
-                            setPart(i, "description", e.target.value)
-                          }
-                          placeholder="Brief description for client"
-                        />
-                      </Field>
-                    </div>
-
-                    <div style={S.g2}>
-                      <Field label="Material" required>
-                        <select
-                          style={S.sel}
-                          value={p.material}
-                          onChange={(e) =>
-                            setPart(i, "material", e.target.value)
-                          }
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "18px 1fr 105px",
+                          gap: 8,
+                          padding: "3px 0 8px",
+                          borderBottom: "1px solid " + K.bdr,
+                        }}
+                      >
+                        <div />
+                        <div
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            color: K.sub,
+                            letterSpacing: 1,
+                            textTransform: "uppercase",
+                          }}
                         >
-                          <option value="">— Select Material —</option>
-                          {MATERIALS.map((m) => (
-                            <option key={m.name}>{m.name}</option>
-                          ))}
-                        </select>
-                        {p.material &&
-                          (() => {
-                            const m = MATERIALS.find(
-                              (x) => x.name === p.material,
-                            );
-                            return m ? (
-                              <div
-                                style={{
-                                  fontSize: 9,
-                                  color: T.green,
-                                  marginTop: 3,
-                                  fontFamily: T.mono,
-                                }}
-                              >
-                                ρ={m.density} kg/m³ · ₹{m.ppkg}/kg
-                              </div>
-                            ) : null;
-                          })()}
-                      </Field>
-                      <Field label="Process" required>
-                        <select
-                          style={S.sel}
-                          value={p.process}
-                          onChange={(e) =>
-                            setPart(i, "process", e.target.value)
-                          }
+                          ITEM
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            color: K.sub,
+                            letterSpacing: 1,
+                            textTransform: "uppercase",
+                            textAlign: "right",
+                          }}
                         >
-                          <option value="">— Select Process —</option>
-                          {PROCESSES.map((pr) => (
-                            <option key={pr.name}>
-                              {pr.icon} {pr.name}
-                            </option>
-                          ))}
-                        </select>
-                        {p.process &&
-                          (() => {
-                            const pr = PROCESSES.find(
-                              (x) => x.name === p.process,
-                            );
-                            return pr ? (
-                              <div
-                                style={{
-                                  fontSize: 9,
-                                  color: T.green,
-                                  marginTop: 3,
-                                  fontFamily: T.mono,
-                                }}
-                              >
-                                ₹{pr.rate}/hr · t: {pr.min_t}–{pr.max_t}mm
-                              </div>
-                            ) : null;
-                          })()}
-                      </Field>
-                    </div>
+                          AMOUNT ({ccy})
+                        </div>
+                      </div>
 
-                    <div style={{ ...S.g5, marginTop: 12 }}>
-                      <Field label="Thickness (mm)" required>
-                        <input
-                          style={S.inp}
-                          type="number"
-                          min=".1"
-                          step=".5"
-                          value={p.thickness}
-                          onChange={(e) =>
-                            setPart(i, "thickness", e.target.value)
-                          }
-                          placeholder="5"
-                        />
-                      </Field>
-                      <Field label="Length (mm)" required>
-                        <input
-                          style={S.inp}
-                          type="number"
-                          min="1"
-                          value={p.length}
-                          onChange={(e) => setPart(i, "length", e.target.value)}
-                          placeholder="200"
-                        />
-                      </Field>
-                      <Field label="Width (mm)" required>
-                        <input
-                          style={S.inp}
-                          type="number"
-                          min="1"
-                          value={p.width}
-                          onChange={(e) => setPart(i, "width", e.target.value)}
-                          placeholder="100"
-                        />
-                      </Field>
-                      <Field label="Height (mm)">
-                        <input
-                          style={S.inp}
-                          type="number"
-                          min="0"
-                          value={p.height}
-                          onChange={(e) => setPart(i, "height", e.target.value)}
-                          placeholder="—"
-                        />
-                      </Field>
-                      <Field label="Quantity (pcs)" required>
-                        <input
-                          style={S.inp}
-                          type="number"
-                          min="1"
-                          value={p.quantity}
-                          onChange={(e) =>
-                            setPart(i, "quantity", e.target.value)
-                          }
-                          placeholder="50"
-                        />
-                      </Field>
-                    </div>
-
-                    <div style={{ ...S.g3, marginTop: 12 }}>
-                      <Field label="Surface Finish">
-                        <select
-                          style={S.sel}
-                          value={p.finish}
-                          onChange={(e) => setPart(i, "finish", e.target.value)}
-                        >
-                          <option value="">— Select —</option>
-                          {FINISH_OPTIONS.map((f) => (
-                            <option key={f}>{f}</option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Tolerance" hint="e.g. ±0.1mm, ISO H7">
-                        <input
-                          style={S.inp}
-                          value={p.tolerance}
-                          onChange={(e) =>
-                            setPart(i, "tolerance", e.target.value)
-                          }
-                          placeholder="±0.1mm"
-                        />
-                      </Field>
-                      <Field label="Hardness / Heat Treatment">
-                        <input
-                          style={S.inp}
-                          value={p.hardness}
-                          onChange={(e) =>
-                            setPart(i, "hardness", e.target.value)
-                          }
-                          placeholder="e.g. HRC 55, Case hardened"
-                        />
-                      </Field>
-                    </div>
-
-                    <div style={{ marginTop: 12 }}>
-                      <Field label="Part Notes / Special Requirements">
-                        <textarea
-                          style={{ ...S.ta, minHeight: 60 }}
-                          value={p.notes}
-                          onChange={(e) => setPart(i, "notes", e.target.value)}
-                          placeholder="Any special notes from drawing or client..."
-                        />
-                      </Field>
-                    </div>
-
-                    {/* Live feasibility */}
-                    {partValid(p) &&
-                      (() => {
-                        const f = calcFeasibility(p);
+                      {CROW.map((row, i) => {
+                        const bv = base[row.k] || 0;
+                        const dv = displayCosts[row.k] || 0;
+                        const edited = ov[row.k] !== undefined;
                         return (
                           <div
+                            key={row.k}
                             style={{
-                              marginTop: 14,
-                              padding: "12px 14px",
-                              background:
-                                f.score === 100
-                                  ? `${T.green}08`
-                                  : `${T.amber}08`,
-                              border: `1px solid ${f.score === 100 ? T.green : T.amber}25`,
-                              borderRadius: 8,
+                              display: "grid",
+                              gridTemplateColumns: "18px 1fr 105px",
+                              gap: 8,
+                              alignItems: "center",
+                              padding: "7px 0",
+                              borderBottom: "1px solid " + K.bg,
                             }}
                           >
                             <div
                               style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 2,
+                                background: BCOLS[i % BCOLS.length],
+                                flexShrink: 0,
+                              }}
+                            />
+                            <div>
+                              <div
+                                style={{
+                                  fontSize: 11.5,
+                                  fontWeight: 600,
+                                  color: edited ? K.yel : "#94a3b8",
+                                }}
+                              >
+                                {row.label}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 9.5,
+                                  color: K.sub,
+                                  marginTop: 1,
+                                }}
+                              >
+                                {row.det}
+                              </div>
+                              {edited && (
+                                <div
+                                  style={{
+                                    fontSize: 9,
+                                    color: K.dim,
+                                    marginTop: 1,
+                                  }}
+                                >
+                                  calc: {curr.sym}
+                                  {bv.toFixed(2)}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ position: "relative" }}>
+                              <span
+                                style={{
+                                  position: "absolute",
+                                  left: 7,
+                                  top: "50%",
+                                  transform: "translateY(-50%)",
+                                  fontSize: 9,
+                                  color: K.sub,
+                                  pointerEvents: "none",
+                                  fontFamily: K.mono,
+                                }}
+                              >
+                                {curr.sym}
+                              </span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={dv.toFixed(2)}
+                                onChange={(e) =>
+                                  setOv((prev) => ({
+                                    ...prev,
+                                    [row.k]: Math.max(0, +e.target.value),
+                                  }))
+                                }
+                                style={{
+                                  background: K.surf,
+                                  border:
+                                    "1px solid " +
+                                    (edited ? K.yel + "88" : K.bdr),
+                                  borderRadius: 7,
+                                  padding: "7px 6px 7px 20px",
+                                  color: edited ? K.yel : K.txt,
+                                  fontSize: 11.5,
+                                  fontWeight: 700,
+                                  width: "100%",
+                                  boxSizing: "border-box",
+                                  fontFamily: K.mono,
+                                  outline: "none",
+                                  textAlign: "right",
+                                  transition: "border-color .2s",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: "11px 0",
+                          borderTop: "1px solid " + K.bdr,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: sm ? 15 : 18,
+                            fontWeight: 800,
+                            color: K.blue,
+                          }}
+                        >
+                          TOTAL
+                        </span>
+                        <span
+                          style={{
+                            fontSize: sm ? 15 : 18,
+                            fontWeight: 800,
+                            color: K.blue,
+                            fontFamily: K.mono,
+                          }}
+                        >
+                          {curr.sym}
+                          {displayCosts.total.toFixed(2)}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: 11.5,
+                          color: K.sub,
+                        }}
+                      >
+                        <span>Per Part</span>
+                        <span style={{ fontFamily: K.mono }}>
+                          {curr.sym}
+                          {displayCosts.per_part.toFixed(2)} x {p.quantity} pcs
+                        </span>
+                      </div>
+                      {Object.keys(ov).length > 0 && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            padding: "8px 12px",
+                            background: K.yel + "0a",
+                            border: "1px solid " + K.yel + "22",
+                            borderRadius: 8,
+                            fontSize: 10.5,
+                            color: K.yel,
+                          }}
+                        >
+                          {Object.keys(ov).length} value(s) overridden. Click
+                          Reset to restore.
+                        </div>
+                      )}
+
+                      {/* Mini bars */}
+                      <div
+                        style={{
+                          marginTop: 14,
+                          borderTop: "1px solid " + K.bdr,
+                          paddingTop: 12,
+                        }}
+                      >
+                        {CROW.map((row, i) => {
+                          const v = displayCosts[row.k] || 0;
+                          return (
+                            <div
+                              key={row.k}
+                              style={{
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 8,
-                                marginBottom: f.warnings.length ? 8 : 0,
+                                marginBottom: 5,
                               }}
                             >
                               <div
                                 style={{
-                                  fontSize: 9,
-                                  fontWeight: 800,
-                                  letterSpacing: "1.5px",
-                                  color: f.score === 100 ? T.green : T.amber,
-                                  fontFamily: T.display,
+                                  width: 64,
+                                  fontSize: 9.5,
+                                  color: K.sub,
+                                  textAlign: "right",
+                                  flexShrink: 0,
+                                  lineHeight: 1.3,
                                 }}
                               >
-                                FEASIBILITY — {f.complexity.toUpperCase()}
+                                {row.label}
                               </div>
                               <div
                                 style={{
                                   flex: 1,
-                                  height: 4,
-                                  background: T.textDim + "40",
-                                  borderRadius: 2,
+                                  background: K.dim + "55",
+                                  borderRadius: 4,
+                                  height: 14,
                                   overflow: "hidden",
                                 }}
                               >
                                 <div
                                   style={{
+                                    width: Math.max(2, (v / maxV) * 100) + "%",
                                     height: "100%",
-                                    background:
-                                      f.score === 100
-                                        ? T.green
-                                        : f.score === 50
-                                          ? T.amber
-                                          : T.red,
-                                    width: `${f.score}%`,
-                                    borderRadius: 2,
+                                    background: BCOLS[i % BCOLS.length],
+                                    transition: "width .6s",
+                                    borderRadius: 4,
                                   }}
                                 />
                               </div>
-                            </div>
-                            {f.warnings.map((w, wi) => (
                               <div
-                                key={wi}
                                 style={{
-                                  fontSize: 11,
-                                  color:
-                                    w.lvl === "error"
-                                      ? T.red
-                                      : w.lvl === "warn"
-                                        ? T.amber
-                                        : "#93c5fd",
-                                  marginBottom: 3,
+                                  width: 68,
+                                  fontSize: 9.5,
+                                  color: K.txt,
+                                  fontWeight: 600,
+                                  textAlign: "right",
+                                  fontFamily: K.mono,
+                                  flexShrink: 0,
                                 }}
                               >
-                                {w.lvl === "error"
-                                  ? "❌"
-                                  : w.lvl === "warn"
-                                    ? "⚠"
-                                    : "ℹ"}{" "}
-                                {w.msg}
+                                {curr.sym}
+                                {v.toFixed(0)}
                               </div>
-                            ))}
-                            {f.warnings.length === 0 && (
-                              <div style={{ fontSize: 11, color: T.green }}>
-                                ✅ All specifications are manufacturable.
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                  </div>
-                </div>
-              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </Card>
 
-              {/* Validation summary */}
-              <div
-                style={{
-                  ...S.card,
-                  border: `1px solid ${allValid ? T.green + "40" : T.red + "40"}`,
-                }}
-              >
-                <SectionHead>✅ Validation Summary</SectionHead>
-                <div style={S.g3}>
-                  {parts.map((p, i) => (
-                    <div
-                      key={p.id}
-                      style={{
-                        background: T.surface,
-                        border: `1px solid ${partValid(p) ? T.green + "30" : T.red + "30"}`,
-                        borderRadius: 8,
-                        padding: "10px 12px",
-                        cursor: "pointer",
-                      }}
-                      onClick={() => setActive(i)}
-                    >
+                    {/* Additional charges */}
+                    <Card>
+                      <SH>Additional Charges</SH>
+                      {extras.map((ex, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            marginBottom: 8,
+                            alignItems: "center",
+                          }}
+                        >
+                          <Inp
+                            value={ex.label}
+                            onChange={(e) =>
+                              setExtras((prev) =>
+                                prev.map((c, j) =>
+                                  j === i ? { ...c, label: e.target.value } : c,
+                                ),
+                              )
+                            }
+                            placeholder="Label e.g. GST, Inspection"
+                            style={{ flex: 2 }}
+                          />
+                          <div style={{ position: "relative", flex: 1 }}>
+                            <span
+                              style={{
+                                position: "absolute",
+                                left: 9,
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                fontSize: 11,
+                                color: K.sub,
+                              }}
+                            >
+                              Rs
+                            </span>
+                            <Inp
+                              type="number"
+                              value={ex.amount}
+                              onChange={(e) =>
+                                setExtras((prev) =>
+                                  prev.map((c, j) =>
+                                    j === i
+                                      ? { ...c, amount: e.target.value }
+                                      : c,
+                                  ),
+                                )
+                              }
+                              placeholder="0"
+                              style={{ paddingLeft: 28, fontFamily: K.mono }}
+                            />
+                          </div>
+                          <Btn
+                            v="ghost"
+                            sz="sm"
+                            onClick={() =>
+                              setExtras((prev) =>
+                                prev.filter((_, j) => j !== i),
+                              )
+                            }
+                            style={{ color: K.red, flexShrink: 0 }}
+                          >
+                            X
+                          </Btn>
+                        </div>
+                      ))}
                       <div
                         style={{
                           display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          marginBottom: 3,
+                          gap: 8,
+                          marginTop: 4,
+                          flexWrap: "wrap",
                         }}
                       >
-                        <span
-                          style={{
-                            color: partValid(p) ? T.green : T.red,
-                            fontSize: 12,
-                          }}
+                        <Btn
+                          v="outline"
+                          sz="sm"
+                          onClick={() =>
+                            setExtras((prev) => [
+                              ...prev,
+                              { label: "", amount: "" },
+                            ])
+                          }
                         >
-                          {partValid(p) ? "✓" : "✗"}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: T.text,
-                          }}
-                        >
-                          {p.partName || `Part ${i + 1}`}
-                        </span>
-                        {p.extracted_from_drawing && (
-                          <Tag color={T.green}>DWG</Tag>
-                        )}
+                          Add
+                        </Btn>
+                        <Btn v="primary" sz="sm" onClick={run}>
+                          Recalculate
+                        </Btn>
                       </div>
-                      {!partValid(p) && (
-                        <div
-                          style={{
-                            fontSize: 9,
-                            color: T.red,
-                            fontFamily: T.mono,
-                          }}
-                        >
-                          Missing: {reqFields.filter((k) => !p[k]).join(", ")}
-                        </div>
-                      )}
-                      {partValid(p) && (
-                        <div
-                          style={{
-                            fontSize: 9,
-                            color: T.textDim,
-                            fontFamily: T.mono,
-                          }}
-                        >
-                          {p.material} · {p.process} · {p.quantity}pcs
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+                    </Card>
 
-              <div
-                style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}
-              >
-                <button style={S.btnGhost} onClick={() => setStep(3)}>
-                  ← BACK
-                </button>
-                <button
-                  style={{
-                    ...S.btn,
-                    opacity: allValid ? 1 : 0.4,
-                    cursor: allValid ? "pointer" : "not-allowed",
-                  }}
-                  onClick={allValid ? runAll : undefined}
-                >
-                  CALCULATE COSTS →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ════════ STEP 5: COSTING ════════ */}
-          {step === 5 && costsArr.length > 0 && (
-            <div>
-              <div style={{ marginBottom: 22 }}>
-                <div
-                  style={{
-                    fontFamily: T.display,
-                    fontSize: 34,
-                    fontWeight: 900,
-                    letterSpacing: "-1px",
-                    color: T.text,
-                    lineHeight: 1,
-                  }}
-                >
-                  COST<span style={{ color: T.accent }}> ANALYSIS</span>
-                </div>
-                <div style={{ fontSize: 12, color: T.textMid, marginTop: 6 }}>
-                  Click any cost value to override. Configure additional charges
-                  below.
-                </div>
-              </div>
-
-              {/* Grand KPIs */}
-              <div style={S.g4}>
-                <Stat
-                  icon="💰"
-                  label="Grand Total"
-                  value={`${curr.sym}${grandTotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`}
-                  color={T.accent}
-                />
-                <Stat
-                  icon="🔩"
-                  label="Parts / Pieces"
-                  value={`${parts.length} / ${parts.reduce((s, p) => s + (+p.quantity || 0), 0)}`}
-                  color={T.accent2}
-                />
-                <Stat
-                  icon="📅"
-                  label="Max Lead Time"
-                  value={
-                    ltArr.length
-                      ? `${Math.max(...ltArr.filter(Boolean).map((l) => l.total))}d`
-                      : "—"
-                  }
-                  color={T.green}
-                  sub={
-                    client.required_days
-                      ? Math.max(
-                          ...ltArr.filter(Boolean).map((l) => l.total),
-                        ) <= +client.required_days
-                        ? "✅ Within target"
-                        : "⚠ May exceed"
-                      : undefined
-                  }
-                />
-                <Stat
-                  icon="🏭"
-                  label="Subtotal (ex-extras)"
-                  value={`${curr.sym}${partSubtotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`}
-                  color={T.amber}
-                />
-              </div>
-
-              {/* Per-part cost tabs */}
-              <div
-                style={{
-                  display: "flex",
-                  gap: 6,
-                  flexWrap: "wrap",
-                  marginBottom: 14,
-                }}
-              >
-                {parts.map((p, i) => {
-                  const dc = displayCost(i);
-                  return (
-                    <button
-                      key={p.id}
-                      style={{
-                        background:
-                          activePartIdx === i ? `${T.accent}18` : T.card,
-                        border: `1px solid ${activePartIdx === i ? T.accent : T.border}`,
-                        color: activePartIdx === i ? T.accent : T.textMid,
-                        borderRadius: 8,
-                        padding: "7px 14px",
-                        cursor: "pointer",
-                        fontFamily: T.body,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                      onClick={() => setActive(i)}
-                    >
-                      {p.partName || `Part ${i + 1}`}
-                      <span
-                        style={{
-                          fontFamily: T.mono,
-                          fontSize: 10,
-                          color: activePartIdx === i ? T.accent : T.textDim,
-                        }}
-                      >
-                        {curr.sym}
-                        {(dc?.total || 0).toFixed(0)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {parts.map((p, i) => {
-                const dc = displayCost(i);
-                if (!dc) return null;
-                const bc = costsArr[i];
-                const feas = calcFeasibility(p);
-                const lt = ltArr[i];
-                const ov = overridesArr[i] || {};
-                const ROWS = [
-                  {
-                    k: "material",
-                    l: "Material",
-                    d: `${p.material} · ${bc.weight.toFixed(4)} kg`,
-                  },
-                  {
-                    k: "machine",
-                    l: "Machining",
-                    d: `${p.process} · ${bc.mhrs.toFixed(2)} hrs`,
-                  },
-                  { k: "labor", l: "Labour", d: "Operator & supervision" },
-                  {
-                    k: "setup",
-                    l: "Setup / NC Prog.",
-                    d: "Machine setup per piece",
-                  },
-                  {
-                    k: "finishing",
-                    l: "Finish",
-                    d: p.finish || "Surface treatment",
-                  },
-                  { k: "packaging", l: "Packaging", d: "Per piece" },
-                  {
-                    k: "transport",
-                    l: "Transport",
-                    d: `To ${client.city || "destination"}`,
-                  },
-                  {
-                    k: "profit",
-                    l: `Profit (${(co.margin * 100).toFixed(0)}%)`,
-                    d: "Overhead & margin",
-                  },
-                ];
-                const maxV = Math.max(...ROWS.map((r) => dc[r.k] || 0), 1);
-                const COLS = [
-                  T.accent,
-                  T.accent2,
-                  T.green,
-                  T.amber,
-                  T.pink,
-                  "#60a5fa",
-                  "#84cc16",
-                  "#f97316",
-                ];
-
-                return (
-                  <div
-                    key={p.id}
-                    style={{ display: activePartIdx === i ? "block" : "none" }}
-                  >
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1.5fr 1fr",
-                        gap: 14,
-                      }}
-                    >
-                      <div>
-                        {/* Editable cost table */}
-                        <div style={S.card}>
-                          <SectionHead
-                            action={
-                              Object.keys(ov).length > 0 ? (
-                                <button
-                                  style={{
-                                    ...S.btnGhost,
-                                    fontSize: 9,
-                                    padding: "5px 12px",
-                                    color: T.amber,
-                                    border: `1px solid ${T.amber}40`,
-                                  }}
-                                  onClick={() =>
-                                    setOvArr((prev) =>
-                                      prev.map((o, j) => (j === i ? {} : o)),
-                                    )
-                                  }
-                                >
-                                  ↺ RESET
-                                </button>
-                              ) : null
-                            }
-                          >
-                            Cost Breakdown — Click to Edit
-                          </SectionHead>
-
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr 1fr 100px",
-                              gap: 8,
-                              padding: "4px 0 8px",
-                              borderBottom: `1px solid ${T.border}`,
-                              marginBottom: 4,
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize: 8,
-                                color: T.textDim,
-                                fontWeight: 800,
-                                letterSpacing: "1.5px",
-                                fontFamily: T.display,
-                              }}
-                            >
-                              ITEM
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 8,
-                                color: T.textDim,
-                                fontWeight: 800,
-                                letterSpacing: "1.5px",
-                                fontFamily: T.display,
-                              }}
-                            >
-                              DETAILS
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 8,
-                                color: T.textDim,
-                                fontWeight: 800,
-                                letterSpacing: "1.5px",
-                                fontFamily: T.display,
-                                textAlign: "right",
-                              }}
-                            >
-                              AMOUNT
-                            </div>
-                          </div>
-
-                          {ROWS.map((row, ri) => {
-                            const edited = ov[row.k] !== undefined;
-                            return (
-                              <div
-                                key={row.k}
-                                style={{
-                                  display: "grid",
-                                  gridTemplateColumns: "1fr 1fr 100px",
-                                  gap: 8,
-                                  alignItems: "center",
-                                  padding: "5px 0",
-                                  borderBottom: `1px solid ${T.textDim}18`,
-                                }}
-                              >
-                                <div>
-                                  <div
-                                    style={{
-                                      fontSize: 12,
-                                      fontWeight: 700,
-                                      color: edited ? T.amber : T.textMid,
-                                    }}
-                                  >
-                                    {row.l}
-                                  </div>
-                                  {edited && (
-                                    <div
-                                      style={{
-                                        fontSize: 9,
-                                        color: T.textDim,
-                                        fontFamily: T.mono,
-                                      }}
-                                    >
-                                      calc: {curr.sym}
-                                      {bc[row.k].toFixed(2)}
-                                    </div>
-                                  )}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: 10,
-                                    color: T.textDim,
-                                    lineHeight: 1.3,
-                                  }}
-                                >
-                                  {row.d}
-                                </div>
-                                <div style={{ position: "relative" }}>
-                                  <span
-                                    style={{
-                                      position: "absolute",
-                                      left: 7,
-                                      top: "50%",
-                                      transform: "translateY(-50%)",
-                                      fontSize: 9,
-                                      color: T.textDim,
-                                      pointerEvents: "none",
-                                      fontFamily: T.mono,
-                                    }}
-                                  >
-                                    {curr.sym}
-                                  </span>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={dc[row.k].toFixed(2)}
-                                    onChange={(e) =>
-                                      setOv(
-                                        i,
-                                        row.k,
-                                        Math.max(0, +e.target.value),
-                                      )
-                                    }
-                                    style={{
-                                      ...S.inp,
-                                      paddingLeft:
-                                        curr.sym.length > 1 ? 22 : 18,
-                                      textAlign: "right",
-                                      fontSize: 12,
-                                      fontWeight: 800,
-                                      color: edited ? T.amber : T.text,
-                                      borderColor: edited
-                                        ? `${T.amber}60`
-                                        : T.border,
-                                      fontFamily: T.mono,
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          <div
-                            style={{
-                              marginTop: 12,
-                              paddingTop: 12,
-                              borderTop: `1px solid ${T.borderHi}`,
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                marginBottom: 4,
-                              }}
-                            >
-                              <span style={{ fontSize: 11, color: T.textMid }}>
-                                Per piece
-                              </span>
-                              <span
-                                style={{
-                                  fontFamily: T.mono,
-                                  fontSize: 12,
-                                  fontWeight: 800,
-                                  color: T.textMid,
-                                }}
-                              >
-                                {curr.sym}
-                                {dc.per_part.toFixed(2)}
-                              </span>
-                            </div>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                              }}
-                            >
-                              <span
-                                style={{
-                                  fontFamily: T.display,
-                                  fontSize: 18,
-                                  fontWeight: 900,
-                                  letterSpacing: "-0.5px",
-                                  color: T.accent,
-                                }}
-                              >
-                                TOTAL ({p.quantity} pcs)
-                              </span>
-                              <span
-                                style={{
-                                  fontFamily: T.mono,
-                                  fontSize: 18,
-                                  fontWeight: 900,
-                                  color: T.accent,
-                                }}
-                              >
-                                {curr.sym}
-                                {dc.total.toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Bar chart */}
-                          <div style={{ marginTop: 14 }}>
-                            {ROWS.map((row, ri) => (
-                              <div
-                                key={row.k}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 10,
-                                  marginBottom: 5,
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    width: 120,
-                                    fontSize: 10,
-                                    color: T.textMid,
-                                    fontFamily: T.body,
-                                  }}
-                                >
-                                  {row.l}
-                                </div>
-                                <div style={{ flex: 1 }}>
-                                  <ProgressBar
-                                    value={dc[row.k] || 0}
-                                    max={maxV}
-                                    color={COLS[ri % COLS.length]}
-                                  />
-                                </div>
-                                <div
-                                  style={{
-                                    width: 80,
-                                    textAlign: "right",
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                    fontFamily: T.mono,
-                                    color: COLS[ri % COLS.length],
-                                  }}
-                                >
-                                  {curr.sym}
-                                  {(dc[row.k] || 0).toFixed(2)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Lead time */}
-                        {lt && (
-                          <div style={S.card}>
-                            <SectionHead>Production Schedule</SectionHead>
-                            <Gantt
-                              schedule={lt.schedule}
-                              total={lt.total}
-                              clientDays={client.required_days}
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        {/* Cost distribution */}
-                        <div style={S.card}>
-                          <SectionHead>Cost Distribution</SectionHead>
-                          {[
-                            ["Material", T.accent, dc.material],
-                            ["Machine", T.accent2, dc.machine],
-                            ["Labour", T.green, dc.labor],
-                            [
-                              "Overhead",
-                              T.amber,
-                              dc.setup +
-                                dc.finishing +
-                                dc.packaging +
-                                dc.transport,
-                            ],
-                            ["Profit", T.red, dc.profit],
-                          ].map(([l, c, v]) => (
-                            <div key={l} style={{ marginBottom: 10 }}>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  fontSize: 11,
-                                  marginBottom: 4,
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    color: T.textMid,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6,
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      width: 8,
-                                      height: 8,
-                                      borderRadius: 2,
-                                      background: c,
-                                      display: "inline-block",
-                                      flexShrink: 0,
-                                    }}
-                                  />
-                                  {l}
-                                </span>
-                                <span
-                                  style={{
-                                    fontFamily: T.mono,
-                                    fontSize: 11,
-                                    color: "#8facc8",
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  {dc.total > 0
-                                    ? ((v / dc.total) * 100).toFixed(0)
-                                    : 0}
-                                  %
-                                </span>
-                              </div>
-                              <ProgressBar value={v} max={dc.total} color={c} />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Part tech details */}
-                        <div style={S.card}>
-                          <SectionHead>Part Details</SectionHead>
-                          <KV label="Material" value={bc.mat.name} mono />
-                          <KV
-                            label="Density"
-                            value={`${bc.mat.density} kg/m³`}
-                            mono
-                          />
-                          <KV
-                            label="Weight"
-                            value={`${bc.weight.toFixed(5)} kg`}
-                            mono
-                          />
-                          <KV
-                            label="Mat. Rate"
-                            value={`₹${bc.mat.ppkg}/kg`}
-                            mono
-                          />
-                          <KV label="Process" value={bc.proc.name} mono />
-                          <KV
-                            label="Mach. Hours"
-                            value={`${bc.mhrs.toFixed(3)} hrs`}
-                            mono
-                          />
-                          <KV label="Qty" value={`${p.quantity} pcs`} mono />
-                          {p.tolerance && (
-                            <KV label="Tolerance" value={p.tolerance} mono />
-                          )}
-                          {p.hardness && (
-                            <KV label="Hardness" value={p.hardness} mono />
-                          )}
-                          {p.drawingNo && (
-                            <KV label="Drawing" value={p.drawingNo} mono />
-                          )}
-                        </div>
-
-                        {/* Feasibility */}
-                        <div style={S.card}>
-                          <SectionHead>Feasibility Check</SectionHead>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                              marginBottom: 10,
-                            }}
-                          >
-                            <div style={{ flex: 1 }}>
-                              <ProgressBar
-                                value={feas.score}
-                                max={100}
-                                color={
-                                  feas.score === 100
-                                    ? T.green
-                                    : feas.score === 50
-                                      ? T.amber
-                                      : T.red
-                                }
-                              />
-                            </div>
-                            <Tag
-                              color={
-                                feas.score === 100
-                                  ? T.green
-                                  : feas.score === 50
-                                    ? T.amber
-                                    : T.red
-                              }
-                            >
-                              {feas.complexity}
-                            </Tag>
-                          </div>
-                          {feas.warnings.length === 0 ? (
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: T.green,
-                                padding: "8px 10px",
-                                background: `${T.green}0a`,
-                                borderRadius: 6,
-                              }}
-                            >
-                              ✅ No manufacturing issues detected.
-                            </div>
-                          ) : (
-                            feas.warnings.map((w, wi) => (
-                              <div
-                                key={wi}
-                                style={{
-                                  padding: "6px 10px",
-                                  borderRadius: 6,
-                                  marginBottom: 5,
-                                  fontSize: 11,
-                                  background:
-                                    w.lvl === "error"
-                                      ? `${T.red}10`
-                                      : w.lvl === "warn"
-                                        ? `${T.amber}10`
-                                        : `${T.accent}10`,
-                                  color:
-                                    w.lvl === "error"
-                                      ? T.red
-                                      : w.lvl === "warn"
-                                        ? T.amber
-                                        : "#93c5fd",
-                                }}
-                              >
-                                {w.msg}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* ── ADDITIONAL CHARGES ── */}
-              <div style={S.card}>
-                <SectionHead>➕ Additional Charges</SectionHead>
-                <p style={{ fontSize: 11, color: T.textDim, marginBottom: 14 }}>
-                  Applied to entire order. Percent-based charges calculate on
-                  parts subtotal.
-                </p>
-                {extras.map((ex, i) => (
-                  <div
-                    key={ex.id}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "auto 1fr 100px 110px 80px 36px",
-                      gap: 8,
-                      alignItems: "center",
-                      marginBottom: 8,
-                      padding: "10px 12px",
-                      background: ex.enabled ? `${T.accent}06` : T.surface,
-                      border: `1px solid ${ex.enabled ? T.borderHi : T.border}`,
-                      borderRadius: 8,
-                      transition: "all .2s",
-                    }}
-                  >
-                    {/* Toggle */}
-                    <div
-                      style={{
-                        width: 32,
-                        height: 18,
-                        background: ex.enabled ? T.accent : T.textDim + "40",
-                        borderRadius: 9,
-                        cursor: ex.locked ? "not-allowed" : "pointer",
-                        position: "relative",
-                        transition: "background .2s",
-                        opacity: ex.locked ? 0.6 : 1,
-                      }}
-                      onClick={() =>
-                        !ex.locked &&
-                        setExtras((prev) =>
-                          prev.map((e2, j) =>
-                            j === i ? { ...e2, enabled: !e2.enabled } : e2,
-                          ),
-                        )
-                      }
-                    >
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: 2,
-                          width: 14,
-                          height: 14,
-                          background: "#fff",
-                          borderRadius: "50%",
-                          left: ex.enabled ? "16px" : "2px",
-                          transition: "left .2s",
-                        }}
-                      />
-                    </div>
-                    {/* Label */}
-                    <input
-                      style={{
-                        ...S.inp,
-                        opacity: ex.enabled ? 1 : 0.4,
-                        fontSize: 12,
-                      }}
-                      value={ex.label}
-                      onChange={(e) =>
-                        setExtras((prev) =>
-                          prev.map((e2, j) =>
-                            j === i ? { ...e2, label: e.target.value } : e2,
-                          ),
-                        )
-                      }
-                      placeholder="Charge label (e.g. GST 18%, Inspection Fee...)"
-                    />
-                    {/* Value */}
-                    <input
-                      style={{
-                        ...S.inp,
-                        opacity: ex.enabled ? 1 : 0.4,
-                        fontFamily: T.mono,
-                        fontSize: 12,
-                      }}
-                      type="number"
-                      value={ex.value}
-                      onChange={(e) =>
-                        setExtras((prev) =>
-                          prev.map((e2, j) =>
-                            j === i ? { ...e2, value: e.target.value } : e2,
-                          ),
-                        )
-                      }
-                    />
-                    {/* Type */}
-                    <select
-                      style={{
-                        ...S.sel,
-                        opacity: ex.enabled ? 1 : 0.4,
-                        fontSize: 11,
-                      }}
-                      value={ex.type}
-                      onChange={(e) =>
-                        setExtras((prev) =>
-                          prev.map((e2, j) =>
-                            j === i ? { ...e2, type: e.target.value } : e2,
-                          ),
-                        )
-                      }
-                    >
-                      <option value="percent">% of subtotal</option>
-                      <option value="fixed">Fixed ₹</option>
-                    </select>
-                    {/* Computed */}
-                    <div
-                      style={{
-                        textAlign: "right",
-                        fontFamily: T.mono,
-                        fontSize: 11,
-                        color: ex.enabled ? T.accent : T.textDim,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {ex.enabled && ex.label && +ex.value > 0
-                        ? `${curr.sym}${(extraRows.find((r) => r.id === ex.id)?.computed || 0).toFixed(2)}`
-                        : "—"}
-                    </div>
-                    {/* Delete */}
-                    {!ex.locked ? (
-                      <button
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: T.red,
-                          cursor: "pointer",
-                          fontSize: 14,
-                          padding: 0,
-                        }}
-                        onClick={() =>
-                          setExtras((prev) => prev.filter((_, j) => j !== i))
-                        }
-                      >
-                        ✕
-                      </button>
-                    ) : (
-                      <div />
+                    {/* Gantt */}
+                    {lt && (
+                      <Card>
+                        <SH>Production Schedule</SH>
+                        <GanttChart
+                          schedule={lt.schedule}
+                          total={lt.total}
+                          clientDays={p.required_days}
+                          sm={sm}
+                        />
+                      </Card>
                     )}
                   </div>
-                ))}
-                <button
-                  style={{ ...S.btnGhost, fontSize: 10, marginTop: 6 }}
-                  onClick={() =>
-                    setExtras((prev) => [
-                      ...prev,
-                      {
-                        id: Math.random().toString(36).slice(2),
-                        label: "",
-                        type: "fixed",
-                        value: "0",
-                        enabled: true,
-                        locked: false,
-                      },
-                    ])
-                  }
-                >
-                  + ADD CHARGE
-                </button>
 
-                {/* Grand total with extras */}
-                <div
-                  style={{
-                    marginTop: 16,
-                    padding: "14px 16px",
-                    background: T.surface,
-                    borderRadius: 8,
-                    border: `1px solid ${T.borderHi}`,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 12,
-                      color: T.textMid,
-                      marginBottom: 6,
-                    }}
-                  >
-                    <span>Parts subtotal</span>
-                    <span style={{ fontFamily: T.mono }}>
-                      {curr.sym}
-                      {partSubtotal.toFixed(2)}
-                    </span>
+                  {/* Right sidebar */}
+                  <div>
+                    <Card>
+                      <SH>Cost Distribution</SH>
+                      <Donut
+                        slices={[
+                          { label: "Material", v: displayCosts.material || 0 },
+                          { label: "Machine", v: displayCosts.machine || 0 },
+                          { label: "Labor", v: displayCosts.labor || 0 },
+                          {
+                            label: "Overhead",
+                            v:
+                              (displayCosts.setup || 0) +
+                              (displayCosts.finishing || 0) +
+                              (displayCosts.packaging || 0) +
+                              (displayCosts.transport || 0) +
+                              (displayCosts.extra || 0),
+                          },
+                          { label: "Profit", v: displayCosts.profit || 0 },
+                        ]}
+                      />
+                    </Card>
+
+                    <Card>
+                      <SH>Part Details</SH>
+                      <KV label="Material" value={base.mat.name} mono />
+                      <KV
+                        label="Density"
+                        value={base.mat.density + " kg/m3"}
+                        mono
+                      />
+                      <KV
+                        label="Weight"
+                        value={base.weight.toFixed(5) + " kg"}
+                        mono
+                      />
+                      <KV
+                        label="Mat Rate"
+                        value={"Rs" + base.mat.ppkg + "/kg"}
+                        mono
+                      />
+                      <KV label="Process" value={base.proc.name} mono />
+                      <KV
+                        label="Mach Hrs"
+                        value={base.mhrs.toFixed(3) + " hrs"}
+                        mono
+                      />
+                      <KV label="Quantity" value={p.quantity + " pcs"} mono />
+                      {p.required_days && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            padding: "8px 11px",
+                            background:
+                              lt && lt.total > +p.required_days
+                                ? K.red + "0d"
+                                : K.grn + "0d",
+                            border:
+                              "1px solid " +
+                              (lt && lt.total > +p.required_days
+                                ? K.red + "22"
+                                : K.grn + "22"),
+                            borderRadius: 8,
+                            fontSize: 11.5,
+                            color:
+                              lt && lt.total > +p.required_days
+                                ? "#fca5a5"
+                                : K.grn,
+                          }}
+                        >
+                          Client: <b>{p.required_days}d</b> - We:{" "}
+                          <b>{lt && lt.total}d</b>{" "}
+                          {lt && lt.total <= +p.required_days
+                            ? "OK"
+                            : "Discuss expedite"}
+                        </div>
+                      )}
+                    </Card>
+
+                    {feas && feas.warnings && feas.warnings.length > 0 && (
+                      <Card style={{ border: "1px solid " + K.yel + "22" }}>
+                        <SH>Manufacturing Notes</SH>
+                        {feas.warnings.map((w, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              padding: "7px 10px",
+                              borderRadius: 7,
+                              marginBottom: 5,
+                              fontSize: 11.5,
+                              background:
+                                w.lvl === "error" ? K.red + "0f" : K.yel + "0f",
+                              border:
+                                "1px solid " +
+                                (w.lvl === "error"
+                                  ? K.red + "28"
+                                  : K.yel + "28"),
+                              color: w.lvl === "error" ? "#fca5a5" : "#fcd34d",
+                            }}
+                          >
+                            {w.msg}
+                          </div>
+                        ))}
+                      </Card>
+                    )}
                   </div>
-                  {extraRows.map((e) => (
-                    <div
-                      key={e.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 12,
-                        color: T.textMid,
-                        marginBottom: 4,
-                      }}
-                    >
-                      <span>{e.label}</span>
-                      <span style={{ fontFamily: T.mono }}>
-                        {curr.sym}
-                        {e.computed.toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                  <div
-                    style={{
-                      borderTop: `1px solid ${T.borderHi}`,
-                      paddingTop: 10,
-                      marginTop: 6,
-                      display: "flex",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontFamily: T.display,
-                        fontSize: 20,
-                        fontWeight: 900,
-                        letterSpacing: "-0.5px",
-                        color: T.text,
-                      }}
-                    >
-                      GRAND TOTAL
-                    </span>
-                    <span
-                      style={{
-                        fontFamily: T.mono,
-                        fontSize: 22,
-                        fontWeight: 900,
-                        color: T.accent,
-                      }}
-                    >
-                      {curr.sym}
-                      {grandTotal.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}
-              >
-                <button style={S.btnGhost} onClick={() => setStep(4)}>
-                  ← EDIT PARTS
-                </button>
-                <button style={S.btn} onClick={() => setStep(6)}>
-                  GENERATE QUOTATION →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ════════ STEP 6: QUOTATION ════════ */}
-          {step === 6 && costsArr.length > 0 && (
-            <div>
-              <div style={{ marginBottom: 22 }}>
-                <div
-                  style={{
-                    fontFamily: T.display,
-                    fontSize: 34,
-                    fontWeight: 900,
-                    letterSpacing: "-1px",
-                    color: T.text,
-                    lineHeight: 1,
-                  }}
-                >
-                  FINAL<span style={{ color: T.accent }}> QUOTATION</span>
-                </div>
-                <div style={{ fontSize: 12, color: T.textMid, marginTop: 6 }}>
-                  Professional PDF quotation — ready to send to client.
-                </div>
-              </div>
-
-              {/* PDF Download — ONLY option, prominent */}
-              <div
-                style={{
-                  ...S.cardHi,
-                  border: `2px solid ${T.accent}40`,
-                  background: `linear-gradient(135deg,${T.card},${T.cardHi})`,
-                  textAlign: "center",
-                  padding: "36px 40px",
-                }}
-              >
-                <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
-                <div
-                  style={{
-                    fontFamily: T.display,
-                    fontSize: 28,
-                    fontWeight: 900,
-                    letterSpacing: "-1px",
-                    color: T.text,
-                    marginBottom: 6,
-                  }}
-                >
-                  PROFESSIONAL QUOTATION
-                </div>
-                <div
-                  style={{ fontSize: 13, color: T.textMid, marginBottom: 24 }}
-                >
-                  {qid} ·{" "}
-                  {new Date().toLocaleDateString("en-IN", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}{" "}
-                  · {parts.length} Part{parts.length > 1 ? "s" : ""} ·{" "}
-                  {curr.sym}
-                  {grandTotal.toFixed(2)} {ccy}
                 </div>
 
-                {/* Preview badges */}
                 <div
                   style={{
                     display: "flex",
-                    justifyContent: "center",
-                    gap: 10,
+                    justifyContent: "space-between",
                     flexWrap: "wrap",
-                    marginBottom: 28,
+                    gap: 10,
                   }}
                 >
-                  {[
-                    ["Client", client.company || client.name || "—"],
-                    ["Parts", `${parts.length} items`],
-                    [
-                      "Pieces",
-                      `${parts.reduce((s, p) => s + (+p.quantity || 0), 0)} pcs`,
-                    ],
-                    ["Total", `${curr.sym}${grandTotal.toFixed(2)}`],
-                    ...(drawingInfo?.has_drawing
-                      ? [["Drawing", "Included"]]
-                      : []),
-                    ...(extraRows.length
-                      ? [["Extras", `${extraRows.length} charges`]]
-                      : []),
-                  ].map(([k, v]) => (
-                    <div
-                      key={k}
-                      style={{
-                        background: T.surface,
-                        border: `1px solid ${T.border}`,
-                        borderRadius: 8,
-                        padding: "8px 14px",
-                        minWidth: 100,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 8,
-                          color: T.textDim,
-                          letterSpacing: "1.5px",
-                          textTransform: "uppercase",
-                          fontFamily: T.display,
-                          marginBottom: 3,
-                        }}
-                      >
-                        {k}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 800,
-                          color: T.text,
-                          fontFamily: T.mono,
-                        }}
-                      >
-                        {v}
-                      </div>
-                    </div>
-                  ))}
+                  <Btn v="outline" onClick={() => setStep(3)}>
+                    Back
+                  </Btn>
+                  <Btn v="primary" sz="lg" onClick={() => setStep(5)}>
+                    Generate Quote
+                  </Btn>
                 </div>
+              </>
+            );
+          })()}
 
-                <button
+        {/* ==== STEP 5: QUOTE ==== */}
+        {step === 5 && displayCosts && (
+          <>
+            <div
+              style={{
+                marginBottom: 16,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <div>
+                <h1
                   style={{
-                    ...S.btn,
-                    fontSize: 16,
-                    padding: "16px 48px",
-                    boxShadow: `0 0 40px ${T.accent}40`,
-                  }}
-                  onClick={downloadPDF}
-                  disabled={pdfBusy}
-                >
-                  {pdfBusy
-                    ? "⏳ GENERATING PDF..."
-                    : "📥 DOWNLOAD PDF QUOTATION"}
-                </button>
-                <div style={{ marginTop: 12, fontSize: 10, color: T.textDim }}>
-                  Professional A4 PDF · Client & delivery details · Cost
-                  breakdown per part · Gantt schedule · Terms & conditions ·
-                  Company signature
-                </div>
-              </div>
-
-              {/* Quotation preview */}
-              <div style={S.card}>
-                <SectionHead>📄 Quotation Preview</SectionHead>
-
-                {/* Header preview */}
-                <div
-                  style={{
-                    background: "#050c18",
-                    border: `1px solid ${T.borderHi}`,
-                    borderRadius: 10,
-                    overflow: "hidden",
-                    marginBottom: 14,
+                    fontSize: sm ? 19 : 26,
+                    fontWeight: 800,
+                    color: K.txt,
+                    marginBottom: 4,
+                    letterSpacing: -0.4,
                   }}
                 >
-                  <div
-                    style={{
-                      background: "linear-gradient(135deg,#050c18,#0f2544)",
-                      padding: "16px 20px",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      borderBottom: `1px solid ${T.border}`,
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontFamily: T.display,
-                          fontSize: 20,
-                          fontWeight: 900,
-                          color: T.text,
-                        }}
-                      >
-                        RFQ<span style={{ color: T.accent }}>Analyzer</span>{" "}
-                        <span style={{ color: T.textMid, fontSize: 14 }}>
-                          PRO
-                        </span>
-                      </div>
-                      <div
-                        style={{ fontSize: 10, color: T.textDim, marginTop: 1 }}
-                      >
-                        {co.name} · {co.addr}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div
-                        style={{
-                          fontFamily: T.display,
-                          fontSize: 18,
-                          fontWeight: 900,
-                          color: T.text,
-                          letterSpacing: "2px",
-                        }}
-                      >
-                        QUOTATION
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 10,
-                          fontFamily: T.mono,
-                          color: T.accent,
-                          marginTop: 2,
-                        }}
-                      >
-                        {qid}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Client & Delivery */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 0,
-                    }}
-                  >
-                    <div
-                      style={{
-                        padding: "14px 20px",
-                        borderRight: `1px solid ${T.border}`,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 8,
-                          color: T.textDim,
-                          letterSpacing: "2px",
-                          textTransform: "uppercase",
-                          fontFamily: T.display,
-                          marginBottom: 6,
-                        }}
-                      >
-                        BILL TO
-                      </div>
-                      <div
-                        style={{ fontSize: 13, fontWeight: 800, color: T.text }}
-                      >
-                        {client.company || client.name || "—"}
-                      </div>
-                      {client.email && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: T.textMid,
-                            marginTop: 1,
-                          }}
-                        >
-                          ✉ {client.email}
-                        </div>
-                      )}
-                      {client.phone && (
-                        <div style={{ fontSize: 11, color: T.textMid }}>
-                          📱 {client.phone}
-                        </div>
-                      )}
-                      {client.gst && (
-                        <div
-                          style={{
-                            fontSize: 10,
-                            fontFamily: T.mono,
-                            color: T.textDim,
-                            marginTop: 2,
-                          }}
-                        >
-                          GST: {client.gst}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ padding: "14px 20px" }}>
-                      <div
-                        style={{
-                          fontSize: 8,
-                          color: T.textDim,
-                          letterSpacing: "2px",
-                          textTransform: "uppercase",
-                          fontFamily: T.display,
-                          marginBottom: 6,
-                        }}
-                      >
-                        SHIP TO
-                      </div>
-                      {client.address && (
-                        <div style={{ fontSize: 11, color: T.textMid }}>
-                          {client.address}
-                        </div>
-                      )}
-                      <div style={{ fontSize: 11, color: T.textMid }}>
-                        {[client.city, client.state, client.pincode]
-                          .filter(Boolean)
-                          .join(", ") || "—"}
-                      </div>
-                      {client.required_days && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: T.amber,
-                            marginTop: 3,
-                            fontWeight: 700,
-                          }}
-                        >
-                          📅 Required: {client.required_days} days
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Parts table preview */}
-                <div style={{ overflowX: "auto" }}>
-                  <table
-                    style={{
-                      width: "100%",
-                      borderCollapse: "collapse",
-                      fontSize: 12,
-                    }}
-                  >
-                    <thead>
-                      <tr style={{ background: T.surface }}>
-                        {[
-                          "#",
-                          "Part Name",
-                          "Material · Process",
-                          "Dimensions",
-                          "Qty",
-                          "Unit Price",
-                          "Amount",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            style={{
-                              padding: "8px 10px",
-                              textAlign:
-                                h === "Amount" || h === "Unit Price"
-                                  ? "right"
-                                  : "left",
-                              color: T.textDim,
-                              fontSize: 8,
-                              fontWeight: 800,
-                              letterSpacing: "1.5px",
-                              textTransform: "uppercase",
-                              fontFamily: T.display,
-                              borderBottom: `1px solid ${T.border}`,
-                            }}
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parts.map((p, i) => {
-                        const dc = displayCost(i);
-                        if (!dc) return null;
-                        return (
-                          <tr
-                            key={p.id}
-                            style={{ borderBottom: `1px solid ${T.textDim}20` }}
-                          >
-                            <td
-                              style={{
-                                padding: "9px 10px",
-                                color: T.textDim,
-                                fontFamily: T.mono,
-                                fontSize: 10,
-                              }}
-                            >
-                              {i + 1}
-                            </td>
-                            <td style={{ padding: "9px 10px" }}>
-                              <div style={{ fontWeight: 700, color: T.text }}>
-                                {p.partName || `Part ${i + 1}`}
-                              </div>
-                              {p.drawingNo && (
-                                <div
-                                  style={{
-                                    fontSize: 9,
-                                    color: T.textDim,
-                                    fontFamily: T.mono,
-                                  }}
-                                >
-                                  Dwg: {p.drawingNo}
-                                </div>
-                              )}
-                            </td>
-                            <td style={{ padding: "9px 10px" }}>
-                              <div style={{ color: T.textMid, fontSize: 11 }}>
-                                {p.material}
-                              </div>
-                              <div style={{ color: T.textDim, fontSize: 10 }}>
-                                {p.process}
-                              </div>
-                            </td>
-                            <td
-                              style={{
-                                padding: "9px 10px",
-                                fontFamily: T.mono,
-                                fontSize: 10,
-                                color: T.textMid,
-                              }}
-                            >
-                              {p.length}×{p.width}×{p.thickness}mm
-                            </td>
-                            <td
-                              style={{
-                                padding: "9px 10px",
-                                textAlign: "center",
-                                fontWeight: 700,
-                                color: T.text,
-                              }}
-                            >
-                              {p.quantity}
-                            </td>
-                            <td
-                              style={{
-                                padding: "9px 10px",
-                                textAlign: "right",
-                                fontFamily: T.mono,
-                                fontSize: 11,
-                                color: T.textMid,
-                              }}
-                            >
-                              {curr.sym}
-                              {dc.per_part.toFixed(2)}
-                            </td>
-                            <td
-                              style={{
-                                padding: "9px 10px",
-                                textAlign: "right",
-                                fontFamily: T.mono,
-                                fontWeight: 900,
-                                color: T.accent,
-                              }}
-                            >
-                              {curr.sym}
-                              {dc.total.toFixed(2)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      {extraRows.map((e) => (
-                        <tr
-                          key={e.id}
-                          style={{ borderBottom: `1px solid ${T.textDim}15` }}
-                        >
-                          <td
-                            colSpan={6}
-                            style={{
-                              padding: "7px 10px",
-                              color: T.textMid,
-                              fontSize: 11,
-                            }}
-                          >
-                            {e.label}
-                          </td>
-                          <td
-                            style={{
-                              padding: "7px 10px",
-                              textAlign: "right",
-                              fontFamily: T.mono,
-                              fontSize: 11,
-                              color: T.amber,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {curr.sym}
-                            {e.computed.toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                      <tr style={{ background: `${T.accent}0a` }}>
-                        <td
-                          colSpan={6}
-                          style={{
-                            padding: "12px 10px",
-                            fontFamily: T.display,
-                            fontWeight: 900,
-                            fontSize: 18,
-                            letterSpacing: "-0.5px",
-                            color: T.accent,
-                          }}
-                        >
-                          GRAND TOTAL ({ccy})
-                        </td>
-                        <td
-                          style={{
-                            padding: "12px 10px",
-                            textAlign: "right",
-                            fontFamily: T.mono,
-                            fontWeight: 900,
-                            fontSize: 20,
-                            color: T.accent,
-                          }}
-                        >
-                          {curr.sym}
-                          {grandTotal.toFixed(2)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-
-                {/* Terms bar */}
-                <div style={{ ...S.g4, marginTop: 14 }}>
-                  {[
-                    [
-                      "Max Lead Time",
-                      ltArr.length
-                        ? `${Math.max(...ltArr.filter(Boolean).map((l) => l.total))} days`
-                        : "—",
-                    ],
-                    [
-                      "Payment",
-                      client.payment_terms?.split(",")[0] || "50% Advance",
-                    ],
-                    ["Valid Until", "30 Days"],
-                    ["Incoterms", client.incoterms || "Ex-Works"],
-                  ].map(([k, v]) => (
-                    <div
-                      key={k}
-                      style={{
-                        background: T.surface,
-                        border: `1px solid ${T.border}`,
-                        borderRadius: 8,
-                        padding: "10px 12px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 8,
-                          color: T.textDim,
-                          letterSpacing: "1.5px",
-                          textTransform: "uppercase",
-                          fontFamily: T.display,
-                          marginBottom: 3,
-                        }}
-                      >
-                        {k}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 800,
-                          color: T.textMid,
-                        }}
-                      >
-                        {v}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                  Quotation
+                </h1>
+                <p style={{ fontSize: 12.5, color: K.sub }}>
+                  Review final quote. Export as PDF, CSV or JSON.
+                </p>
               </div>
-
               <div
-                style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
               >
-                <button style={S.btnGhost} onClick={() => setStep(5)}>
-                  ← BACK TO COSTING
-                </button>
-                <button style={S.btnGhost} onClick={resetAll}>
-                  🔄 NEW RFQ
-                </button>
-                <button style={S.btn} onClick={downloadPDF} disabled={pdfBusy}>
-                  {pdfBusy ? "⏳ GENERATING..." : "📥 DOWNLOAD PDF"}
-                </button>
+                <Tag col={K.blue} sm>
+                  {qid}
+                </Tag>
+                {/* Currency in quote step - same state, same effect everywhere */}
+                <CcySel ccy={ccy} setCcy={setCcy} ccyList={ccyList} />
               </div>
             </div>
-          )}
-        </div>
-        {/* /main */}
-      </div>
-      {/* /layout */}
 
-      <style>{`
-        @keyframes slideIn { from{transform:translateX(20px);opacity:0} to{transform:translateX(0);opacity:1} }
-        input:focus, select:focus, textarea:focus { border-color: ${T.accent} !important; box-shadow: 0 0 0 2px ${T.accent}20 !important; }
-        ::-webkit-scrollbar { width:6px; height:6px }
-        ::-webkit-scrollbar-track { background:${T.bg} }
-        ::-webkit-scrollbar-thumb { background:${T.border}; border-radius:3px }
-        ::-webkit-scrollbar-thumb:hover { background:${T.borderHi} }
-        * { box-sizing:border-box }
-      `}</style>
+            {/* Quote summary */}
+            <Card style={{ border: "1px solid " + K.blue + "22" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: sm ? "1fr" : "1fr 1fr",
+                  gap: 14,
+                  marginBottom: 16,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 700,
+                      color: K.sub,
+                      letterSpacing: 1.5,
+                      textTransform: "uppercase",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Client
+                  </div>
+                  <KV label="Company" value={p.client || "--"} />
+                  <KV label="Delivery" value={p.delivery || "--"} />
+                  <KV label="Finish" value={p.finish || "Standard"} />
+                  <KV
+                    label="Target"
+                    value={
+                      p.required_days
+                        ? p.required_days + " days"
+                        : "Not specified"
+                    }
+                  />
+                </div>
+                <div>
+                  <div
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 700,
+                      color: K.sub,
+                      letterSpacing: 1.5,
+                      textTransform: "uppercase",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Part
+                  </div>
+                  <KV label="Material" value={p.material || "--"} mono />
+                  <KV
+                    label="Thickness"
+                    value={(p.thickness || "--") + " mm"}
+                    mono
+                  />
+                  <KV
+                    label="Size"
+                    value={
+                      (p.length || "--") + " x " + (p.width || "--") + " mm"
+                    }
+                    mono
+                  />
+                  <KV
+                    label="Quantity"
+                    value={(p.quantity || "--") + " pcs"}
+                    mono
+                  />
+                  <KV label="Process" value={p.process || "--"} mono />
+                </div>
+              </div>
+
+              {/* Cost summary stats */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: sm ? "1fr 1fr" : "repeat(3,1fr)",
+                  gap: 10,
+                  marginBottom: 16,
+                }}
+              >
+                <StatCard
+                  icon="$"
+                  label="Total Cost"
+                  value={fmtAmt(displayCosts.total)}
+                  col={K.blue}
+                />
+                <StatCard
+                  icon="*"
+                  label="Per Part"
+                  value={fmtAmt(displayCosts.per_part)}
+                  col={K.pur}
+                />
+                <StatCard
+                  icon="D"
+                  label="Lead Time"
+                  value={lt ? lt.total + " days" : "--"}
+                  col={K.grn}
+                />
+              </div>
+
+              {/* Commercial terms */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: sm ? "1fr 1fr" : "repeat(4,1fr)",
+                  gap: 8,
+                  marginBottom: 16,
+                }}
+              >
+                {[
+                  [
+                    "Our Lead Time",
+                    lt ? lt.total + " working days" : "7-21 days",
+                  ],
+                  [
+                    "Client Target",
+                    p.required_days
+                      ? p.required_days + " days"
+                      : "Not specified",
+                  ],
+                  ["Quote Valid", "30 days"],
+                  ["Payment", "50% advance"],
+                ].map(([k, v]) => (
+                  <div
+                    key={k}
+                    style={{
+                      background: K.surf,
+                      borderRadius: 8,
+                      padding: "9px 11px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 9,
+                        color: K.sub,
+                        letterSpacing: 1,
+                        textTransform: "uppercase",
+                        marginBottom: 3,
+                      }}
+                    >
+                      {k}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#64748b",
+                      }}
+                    >
+                      {v}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Lead time verdict */}
+              {lt && p.required_days && (
+                <div
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 9,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    background:
+                      lt.total <= +p.required_days
+                        ? K.grn + "10"
+                        : K.red + "10",
+                    border:
+                      "1px solid " +
+                      (lt.total <= +p.required_days
+                        ? K.grn + "28"
+                        : K.red + "28"),
+                    color: lt.total <= +p.required_days ? K.grn : "#fca5a5",
+                    marginBottom: 16,
+                  }}
+                >
+                  {lt.total <= +p.required_days
+                    ? "Lead time (" +
+                      lt.total +
+                      "d) meets client target (" +
+                      p.required_days +
+                      "d)."
+                    : "Lead time (" +
+                      lt.total +
+                      "d) exceeds target (" +
+                      p.required_days +
+                      "d) by " +
+                      (lt.total - +p.required_days) +
+                      "d - discuss expediting."}
+                </div>
+              )}
+
+              {/* Gantt in quote */}
+              {lt && (
+                <div>
+                  <div
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 700,
+                      color: K.sub,
+                      letterSpacing: 1.5,
+                      textTransform: "uppercase",
+                      marginBottom: 10,
+                    }}
+                  >
+                    Production Schedule
+                  </div>
+                  <GanttChart
+                    schedule={lt.schedule}
+                    total={lt.total}
+                    clientDays={p.required_days}
+                    sm={sm}
+                  />
+                </div>
+              )}
+            </Card>
+
+            {/* Feasibility warnings */}
+            {feas && feas.warnings && feas.warnings.length > 0 && (
+              <Card style={{ border: "1px solid " + K.yel + "28" }}>
+                <SH>Manufacturing Notes - Complexity: {feas.complexity}</SH>
+                {feas.warnings.map((w, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "7px 10px",
+                      borderRadius: 7,
+                      marginBottom: 5,
+                      fontSize: 12,
+                      background:
+                        w.lvl === "error" ? K.red + "0f" : K.yel + "0f",
+                      border:
+                        "1px solid " +
+                        (w.lvl === "error" ? K.red + "28" : K.yel + "28"),
+                      color: w.lvl === "error" ? "#fca5a5" : "#fcd34d",
+                    }}
+                  >
+                    {w.msg}
+                  </div>
+                ))}
+              </Card>
+            )}
+
+            {/* Export buttons */}
+            <Card>
+              <SH>Export Quotation</SH>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <Btn v="danger" sz="lg" disabled={pdfBusy} onClick={doPDF}>
+                  {pdfBusy ? "Generating PDF..." : "Download PDF"}
+                </Btn>
+                <Btn
+                  v="outline"
+                  onClick={() =>
+                    exportCSV(
+                      qid,
+                      p,
+                      displayCosts,
+                      activeExtras,
+                      lt,
+                      co,
+                      ccySrc,
+                    )
+                  }
+                >
+                  Export CSV
+                </Btn>
+                <Btn
+                  v="outline"
+                  onClick={() =>
+                    exportJSON(
+                      qid,
+                      p,
+                      displayCosts,
+                      activeExtras,
+                      lt,
+                      co,
+                      ccy,
+                      ccySrc,
+                    )
+                  }
+                >
+                  Export JSON
+                </Btn>
+              </div>
+              <div
+                style={{
+                  marginTop: 12,
+                  fontSize: 10.5,
+                  color: K.sub,
+                  lineHeight: 1.75,
+                }}
+              >
+                PDF includes: client info, part specs, full cost breakdown,
+                production Gantt chart, commercial terms. All exports use
+                currency: <b style={{ color: K.blue }}>{ccy}</b> - change the
+                currency selector above to switch.
+              </div>
+            </Card>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <Btn v="outline" onClick={() => setStep(4)}>
+                Back to Costs
+              </Btn>
+              <Btn v="ghost" onClick={reset}>
+                New RFQ
+              </Btn>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
